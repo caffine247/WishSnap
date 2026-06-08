@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { identifyItemFromPhoto } from '../services/openai';
+import { fetchPrice } from '../services/priceService';
 import { addWishlistItem } from '../services/wishlist';
 import { useAuth } from '../context/AuthContext';
 
@@ -16,7 +17,9 @@ export default function CameraScreen({ navigation }) {
   const { user } = useAuth();
   const [image, setImage] = useState(null);
   const [result, setResult] = useState(null);
+  const [priceInfo, setPriceInfo] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingPrice, setLoadingPrice] = useState(false);
   const [occasion, setOccasion] = useState('Christmas');
 
   async function pickImage() {
@@ -53,14 +56,29 @@ export default function CameraScreen({ navigation }) {
   async function analyzeImage(base64) {
     setLoading(true);
     setResult(null);
+    setPriceInfo(null);
     try {
       const identified = await identifyItemFromPhoto(base64);
       setResult(identified);
+      lookupPrice(identified.searchQuery);
     } catch (e) {
       console.log('Vision error:', e.message);
       Alert.alert('Could not identify item', e.message || 'Try a clearer photo with the item more visible.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function lookupPrice(searchQuery) {
+    setLoadingPrice(true);
+    try {
+      const retailer = (await AsyncStorage.getItem('preferredRetailer')) || 'Amazon';
+      const price = await fetchPrice(searchQuery, retailer);
+      setPriceInfo(price);
+    } catch (e) {
+      console.log('Price fetch error:', e.message);
+    } finally {
+      setLoadingPrice(false);
     }
   }
 
@@ -72,10 +90,16 @@ export default function CameraScreen({ navigation }) {
       searchQuery: result.searchQuery,
       occasion,
       imageUri: image,
+      price: priceInfo?.price || null,
+      currency: priceInfo?.currency || null,
+      retailer: priceInfo?.retailer || null,
+      priceDate: priceInfo?.priceDate || null,
+      productUrl: priceInfo?.productUrl || null,
     });
     Alert.alert('Added!', `${result.name} added to your ${occasion} list.`);
     setImage(null);
     setResult(null);
+    setPriceInfo(null);
     navigation.navigate('Wishlist');
   }
 
@@ -106,6 +130,24 @@ export default function CameraScreen({ navigation }) {
         <View style={styles.resultCard}>
           <Text style={styles.itemName}>{result.name}</Text>
           <Text style={styles.itemCategory}>{result.category}</Text>
+
+          {loadingPrice && (
+            <View style={styles.priceLoading}>
+              <ActivityIndicator size="small" color="#E8335A" />
+              <Text style={styles.priceLoadingText}>Looking up price...</Text>
+            </View>
+          )}
+
+          {priceInfo && !loadingPrice && (
+            <View style={styles.priceBadge}>
+              <Text style={styles.priceAmount}>${priceInfo.price.toFixed(2)}</Text>
+              <Text style={styles.priceRetailer}>on {priceInfo.retailer}</Text>
+            </View>
+          )}
+
+          {!priceInfo && !loadingPrice && (
+            <Text style={styles.noPriceText}>Price unavailable — check retailers below</Text>
+          )}
 
           <Text style={styles.sectionLabel}>Add to list:</Text>
           <View style={styles.occasionRow}>
@@ -156,7 +198,13 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 12, color: '#888', fontSize: 14 },
   resultCard: { backgroundColor: '#f9f9f9', borderRadius: 16, padding: 20 },
   itemName: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
-  itemCategory: { fontSize: 14, color: '#888', marginBottom: 16, textTransform: 'capitalize' },
+  itemCategory: { fontSize: 14, color: '#888', marginBottom: 12, textTransform: 'capitalize' },
+  priceLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  priceLoadingText: { color: '#888', fontSize: 13 },
+  priceBadge: { flexDirection: 'row', alignItems: 'baseline', gap: 6, backgroundColor: '#e8f5e9', borderRadius: 10, padding: 10, marginBottom: 12 },
+  priceAmount: { fontSize: 22, fontWeight: '800', color: '#2e7d32' },
+  priceRetailer: { fontSize: 13, color: '#555' },
+  noPriceText: { fontSize: 13, color: '#aaa', marginBottom: 12, fontStyle: 'italic' },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 8, marginTop: 8 },
   occasionRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   occasionButton: { flex: 1, borderWidth: 2, borderColor: '#E8335A', borderRadius: 10, padding: 10, alignItems: 'center' },

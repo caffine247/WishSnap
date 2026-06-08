@@ -68,6 +68,9 @@ export default function WishlistScreen({ navigation }) {
               <View style={styles.cardBody}>
                 <Text style={styles.cardName}>{item.name}</Text>
                 <Text style={styles.cardCategory}>{item.category} · {item.occasion === 'Christmas' ? '🎄' : '🎂'} {item.occasion}</Text>
+                {item.price ? (
+                  <Text style={styles.cardPrice}>${item.price.toFixed(2)} · {item.retailer}</Text>
+                ) : null}
               </View>
               <TouchableOpacity onPress={() => handleDelete(item.id)}>
                 <Text style={styles.deleteBtn}>✕</Text>
@@ -98,4 +101,5 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 16, fontWeight: '700' },
   cardCategory: { fontSize: 13, color: '#888', marginTop: 2, textTransform: 'capitalize' },
   deleteBtn: { padding: 16, color: '#ccc', fontSize: 18 },
+  cardPrice: { fontSize: 13, color: '#2e7d32', fontWeight: '700', marginTop: 2 },
 });

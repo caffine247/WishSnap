@@ -8,6 +8,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import CameraScreen from './src/screens/CameraScreen';
 import WishlistScreen from './src/screens/WishlistScreen';
 import DealsScreen from './src/screens/DealsScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -30,6 +31,11 @@ function MainTabs() {
         name="Wishlist"
         component={WishlistScreen}
         options={{ tabBarIcon: () => <Text style={{ fontSize: 22 }}>🎁</Text>, tabBarLabel: 'Wishlist' }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ tabBarIcon: () => <Text style={{ fontSize: 22 }}>⚙️</Text>, tabBarLabel: 'Settings' }}
       />
     </Tab.Navigator>
   );

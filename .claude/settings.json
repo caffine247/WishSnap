@@ -1,5 +1,20 @@
 {
   "enabledPlugins": {
     "expo@claude-plugins-official": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"A git commit was just made. Review the changes and check if README.md needs to be updated to reflect any new features, changed setup steps, or updated project structure. If it does, update it and commit the change.\"}}'",
+            "statusMessage": "Checking if README needs updating..."
+          }
+        ]
+      }
+    ]
   }
 }

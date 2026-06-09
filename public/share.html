@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WishSnap - Wish List</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f7f7f7; color: #333; }
+    .header { background: #E8335A; color: white; padding: 24px 20px 20px; text-align: center; }
+    .header h1 { font-size: 28px; font-weight: 800; }
+    .header p { font-size: 14px; opacity: 0.85; margin-top: 4px; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px 16px 60px; }
+    .loading { text-align: center; padding: 60px 20px; color: #888; font-size: 16px; }
+    .error { text-align: center; padding: 60px 20px; color: #E8335A; font-size: 16px; }
+    .occasion-badge { display: inline-block; background: #fff0f3; color: #E8335A; border-radius: 20px; padding: 6px 14px; font-size: 13px; font-weight: 700; margin-bottom: 16px; }
+    .item-card { background: white; border-radius: 14px; margin-bottom: 12px; overflow: hidden; display: flex; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+    .item-img { width: 80px; height: 80px; object-fit: cover; flex-shrink: 0; }
+    .item-img-placeholder { width: 80px; height: 80px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
+    .item-body { padding: 12px 14px; flex: 1; }
+    .item-name { font-size: 16px; font-weight: 700; }
+    .item-category { font-size: 13px; color: #888; margin-top: 2px; text-transform: capitalize; }
+    .item-price { font-size: 13px; color: #2e7d32; font-weight: 700; margin-top: 4px; }
+    .empty { text-align: center; padding: 40px 20px; color: #aaa; }
+    .footer { text-align: center; margin-top: 32px; font-size: 12px; color: #bbb; }
+    .footer span { color: #E8335A; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🎁 WishSnap</h1>
+    <p id="subtitle">Loading wish list...</p>
+  </div>
+  <div class="container">
+    <div class="loading" id="loading">Loading...</div>
+    <div id="content" style="display:none"></div>
+    <div class="error" id="error" style="display:none">List not found or link has expired.</div>
+  </div>
+  <div class="footer">Shared via <span>WishSnap</span></div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+    import { getFirestore, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCLpm4x37sTahOQbV_gsxZ-K6TKclkqsNs",
+      authDomain: "wishsnap-ba0a9.firebaseapp.com",
+      projectId: "wishsnap-ba0a9",
+      storageBucket: "wishsnap-ba0a9.firebasestorage.app",
+      messagingSenderId: "241647023912",
+      appId: "1:241647023912:web:bc87137b35d3ddbef0821d"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+
+    async function loadList() {
+      if (!token) { showError(); return; }
+      try {
+        const q = query(collection(db, 'shares'), where('token', '==', token));
+        const snap = await getDocs(q);
+        if (snap.empty) { showError(); return; }
+
+        const data = snap.docs[0].data();
+        renderList(data);
+      } catch (e) {
+        showError();
+      }
+    }
+
+    function renderList(data) {
+      document.getElementById('loading').style.display = 'none';
+      const content = document.getElementById('content');
+      content.style.display = 'block';
+
+      const occasionLabel = data.occasion === 'All' ? 'Full Wish List' : `${data.occasion} Wish List`;
+      document.getElementById('subtitle').textContent = occasionLabel;
+      document.title = `WishSnap - ${occasionLabel}`;
+
+      if (!data.items || data.items.length === 0) {
+        content.innerHTML = '<div class="empty">No items on this list yet!</div>';
+        return;
+      }
+
+      const occasionEmoji = data.occasion === 'Christmas' ? '🎄' : data.occasion === 'Birthday' ? '🎂' : '🎁';
+      let html = `<div class="occasion-badge">${occasionEmoji} ${occasionLabel}</div>`;
+
+      data.items.forEach(item => {
+        const img = item.imageUri
+          ? `<img class="item-img" src="${item.imageUri}" alt="${item.name}" onerror="this.style.display='none'" />`
+          : `<div class="item-img-placeholder">🎁</div>`;
+
+        const price = item.price
+          ? `<div class="item-price">$${parseFloat(item.price).toFixed(2)} · ${item.retailer || ''}</div>`
+          : '';
+
+        html += `
+          <div class="item-card">
+            ${img}
+            <div class="item-body">
+              <div class="item-name">${item.name}</div>
+              <div class="item-category">${item.category || ''}</div>
+              ${price}
+            </div>
+          </div>`;
+      });
+
+      content.innerHTML = html;
+    }
+
+    function showError() {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('error').style.display = 'block';
+    }
+
+    loadList();
+  </script>
+</body>
+</html>

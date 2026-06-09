@@ -1,14 +1,18 @@
 # 🎁 WishSnap
 
-Snap a photo of your child holding an item they want — WishSnap uses AI to identify it and helps you find the best deals across your favorite retailers.
+Snap a photo of your child holding an item they want — WishSnap uses AI to identify it, confirms with you, looks up the current price, and helps you share the list with family.
 
 ## Features
 
 - **AI-powered photo recognition** — powered by GPT-4o Vision, identifies toys, games, books, and more from a photo
+- **AI confidence confirmation** — shows a confidence message (🎯 high / 🤔 medium / ❓ low) and lets you correct the item name before saving
+- **Live price lookup** — fetches the current price from your preferred retailer automatically
 - **Christmas & Birthday lists** — organize wishes by occasion
 - **Multi-retailer search** — search Amazon, Walmart, or Target instantly
+- **Shareable links** — generate a public link to share the wishlist with grandparents and family — no app needed, opens in any browser
 - **Cloud sync** — lists are saved to the cloud so parents can view from any device
 - **Family accounts** — sign up and log in with email/password via Firebase Auth
+- **Settings** — choose your preferred retailer for price lookups
 
 ## Tech Stack
 
@@ -17,7 +21,8 @@ Snap a photo of your child holding an item they want — WishSnap uses AI to ide
 | Mobile | React Native (Expo SDK 54) |
 | AI Vision | OpenAI GPT-4o |
 | Auth & Database | Firebase (Auth + Firestore) |
-| Retailer Search | Amazon, Walmart, Target (WebView) |
+| Price Lookup | RapidAPI Real-Time Product Search |
+| Web Sharing | Firebase Hosting |
 
 ## Getting Started
 
@@ -27,6 +32,7 @@ Snap a photo of your child holding an item they want — WishSnap uses AI to ide
 - [Expo Go](https://expo.dev/client) app on your phone
 - OpenAI API key with billing enabled
 - Firebase project with Auth and Firestore enabled
+- RapidAPI key (free tier) for price lookup
 
 ### Installation
 
@@ -44,6 +50,7 @@ Snap a photo of your child holding an item they want — WishSnap uses AI to ide
 3. **Create your `.env` file** in the project root:
    ```
    EXPO_PUBLIC_OPENAI_API_KEY=your_openai_key_here
+   EXPO_PUBLIC_RAPIDAPI_KEY=your_rapidapi_key_here
    EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
    EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
    EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
@@ -56,26 +63,49 @@ Snap a photo of your child holding an item they want — WishSnap uses AI to ide
    ```bash
    npx expo start
    ```
+   For testing outside your local network:
+   ```bash
+   npx expo start --tunnel
+   ```
 
 5. Scan the QR code with **Expo Go** on your phone.
+
+### Firebase Hosting (Shared Lists)
+
+To enable the shareable web links feature, deploy to Firebase Hosting:
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase deploy --only hosting,firestore:rules --project your_project_id
+```
 
 ## Project Structure
 
 ```
 WishSnap/
 ├── App.js                        # Navigation & auth routing
+├── app.json                      # Expo config
+├── eas.json                      # EAS Build config
+├── firebase.json                 # Firebase Hosting config
+├── firestore.rules               # Firestore security rules
+├── public/
+│   └── share.html                # Public shareable list web page
 └── src/
     ├── context/
     │   └── AuthContext.js        # Firebase auth state
     ├── services/
     │   ├── firebase.js           # Firebase initialization
     │   ├── openai.js             # GPT-4o Vision API
+    │   ├── priceService.js       # RapidAPI price lookup
+    │   ├── shareService.js       # Firestore share link generation
     │   └── wishlist.js           # Firestore read/write
     └── screens/
         ├── LoginScreen.js        # Sign up / log in
-        ├── CameraScreen.js       # Photo capture & AI identification
-        ├── WishlistScreen.js     # View & manage saved items
-        └── DealsScreen.js        # In-app retailer search
+        ├── CameraScreen.js       # Photo capture, AI ID, confidence confirm
+        ├── WishlistScreen.js     # View, manage & share saved items
+        ├── DealsScreen.js        # In-app retailer search
+        └── SettingsScreen.js     # Preferred retailer selection
 ```
 
 ## How It Works
@@ -83,15 +113,30 @@ WishSnap/
 1. Parent opens the app and taps **Snap**
 2. Take a photo of your child holding the item they want
 3. GPT-4o Vision analyzes the photo and identifies the product
-4. Choose to add it to the **Christmas** or **Birthday** list
-5. Tap any retailer to search for current deals
+4. A **confidence card** appears — confirm the item or correct it
+5. The app automatically looks up the current price from your preferred retailer
+6. Choose to add it to the **Christmas** or **Birthday** list
+7. Tap **Share List** to generate a link you can text to grandparents or family
+
+## Running Outside Your Network
+
+Use Expo tunnel mode for testing anywhere with internet:
+
+```bash
+# Install ngrok auth token first (free at ngrok.com)
+npx ngrok config add-authtoken YOUR_NGROK_TOKEN
+
+# Then start with tunnel
+npx expo start --tunnel
+```
 
 ## Roadmap
 
 - [ ] Per-child lists (e.g. "Emma's List", "Jake's List")
+- [ ] Deep links — shared URL opens directly in app
 - [ ] Price drop notifications
-- [ ] Shareable list links for family members
-- [ ] Direct product API integration for real-time pricing
+- [ ] Mark items as purchased (for family members)
+- [ ] App Store / TestFlight release
 
 ## License
 

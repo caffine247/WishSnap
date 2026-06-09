@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, Image, Share } from 'react-native';
 import { getWishlistItems, deleteWishlistItem } from '../services/wishlist';
+import { createShareLink } from '../services/shareService';
 import { useAuth } from '../context/AuthContext';
 
 export default function WishlistScreen({ navigation }) {
   const { user, logout } = useAuth();
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState('All');
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
     loadItems();
@@ -27,6 +29,22 @@ export default function WishlistScreen({ navigation }) {
         }
       },
     ]);
+  }
+
+  async function handleShare() {
+    setSharing(true);
+    try {
+      const url = await createShareLink(user.uid, filter);
+      const occasionLabel = filter === 'All' ? 'Wish List' : `${filter} Wish List`;
+      await Share.share({
+        message: `Check out our ${occasionLabel}! 🎁\n${url}`,
+        url,
+      });
+    } catch (e) {
+      Alert.alert('Could not create share link', e.message);
+    } finally {
+      setSharing(false);
+    }
   }
 
   const filtered = filter === 'All' ? items : items.filter((i) => i.occasion === filter);
@@ -58,26 +76,34 @@ export default function WishlistScreen({ navigation }) {
           <Text style={styles.emptySubtext}>Tap the camera tab to snap your first wish.</Text>
         </View>
       ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 16 }}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.cardImage} />}
-              <View style={styles.cardBody}>
-                <Text style={styles.cardName}>{item.name}</Text>
-                <Text style={styles.cardCategory}>{item.category} · {item.occasion === 'Christmas' ? '🎄' : '🎂'} {item.occasion}</Text>
-                {item.price ? (
-                  <Text style={styles.cardPrice}>${item.price.toFixed(2)} · {item.retailer}</Text>
-                ) : null}
+        <>
+          <TouchableOpacity style={styles.shareButton} onPress={handleShare} disabled={sharing}>
+            <Text style={styles.shareButtonText}>
+              {sharing ? 'Creating link...' : `🔗  Share ${filter === 'All' ? 'List' : filter + ' List'}`}
+            </Text>
+          </TouchableOpacity>
+
+          <FlatList
+            data={filtered}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ padding: 16 }}
+            renderItem={({ item }) => (
+              <View style={styles.card}>
+                {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.cardImage} />}
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardName}>{item.name}</Text>
+                  <Text style={styles.cardCategory}>{item.category} · {item.occasion === 'Christmas' ? '🎄' : '🎂'} {item.occasion}</Text>
+                  {item.price ? (
+                    <Text style={styles.cardPrice}>${item.price.toFixed(2)} · {item.retailer}</Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                  <Text style={styles.deleteBtn}>✕</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                <Text style={styles.deleteBtn}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        />
+            )}
+          />
+        </>
       )}
     </View>
   );
@@ -88,10 +114,12 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 12 },
   title: { fontSize: 28, fontWeight: '800' },
   logoutText: { color: '#E8335A', fontSize: 14 },
-  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 12 },
   filterButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5, borderColor: '#E8335A' },
   filterActive: { backgroundColor: '#E8335A' },
   filterText: { color: '#E8335A', fontWeight: '600', fontSize: 13 },
+  shareButton: { marginHorizontal: 16, marginBottom: 8, backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E8335A', borderRadius: 12, padding: 12, alignItems: 'center' },
+  shareButtonText: { color: '#E8335A', fontWeight: '700', fontSize: 15 },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { fontSize: 20, fontWeight: '700', color: '#333' },
   emptySubtext: { fontSize: 14, color: '#888', marginTop: 8 },

@@ -38,20 +38,16 @@
   </div>
   <div class="footer">Shared via <span>WishSnap</span></div>
 
+  <!-- Firebase config is served automatically by Firebase Hosting — no keys in code -->
+  <script src="/__/firebase/10.12.0/firebase-app-compat.js"></script>
+  <script src="/__/firebase/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="/__/firebase/init.js"></script>
   <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
     import { getFirestore, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+    import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyCLpm4x37sTahOQbV_gsxZ-K6TKclkqsNs",
-      authDomain: "wishsnap-ba0a9.firebaseapp.com",
-      projectId: "wishsnap-ba0a9",
-      storageBucket: "wishsnap-ba0a9.firebasestorage.app",
-      messagingSenderId: "241647023912",
-      appId: "1:241647023912:web:bc87137b35d3ddbef0821d"
-    };
-
-    const app = initializeApp(firebaseConfig);
+    // Use the already-initialized app from /__/firebase/init.js
+    const app = getApps()[0];
     const db = getFirestore(app);
 
     const params = new URLSearchParams(window.location.search);

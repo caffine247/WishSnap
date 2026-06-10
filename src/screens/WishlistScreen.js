@@ -2,13 +2,19 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, Alert,
-  Image, Share, ScrollView, Modal, Linking,
+  Image, Share, ScrollView, Modal, Linking, Platform,
 } from 'react-native';
 import { getWishlistItems, deleteWishlistItem, moveWishlistItem, updateWishlistItem } from '../services/wishlist';
 import { fetchAllPrices } from '../services/priceService';
 import { getChildren } from '../services/childrenService';
 import { createShareLink } from '../services/shareService';
 import { useAuth } from '../context/AuthContext';
+
+const RETAILERS = [
+  { name: 'Amazon', color: '#FF9900', searchUrl: (q) => `https://www.amazon.com/s?k=${encodeURIComponent(q)}` },
+  { name: 'Walmart', color: '#0071CE', searchUrl: (q) => `https://www.walmart.com/search?q=${encodeURIComponent(q)}` },
+  { name: 'Target', color: '#CC0000', searchUrl: (q) => `https://www.target.com/s?searchTerm=${encodeURIComponent(q)}` },
+];
 
 export default function WishlistScreen({ navigation }) {
   const { user } = useAuth();
@@ -162,22 +168,38 @@ export default function WishlistScreen({ navigation }) {
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ padding: 16 }}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.card} onPress={() => setDetailItem(item)} activeOpacity={0.75}>
-                {item.imageUri
-                  ? <Image source={{ uri: item.imageUri }} style={styles.cardImage} />
-                  : <View style={styles.cardImagePlaceholder}><Text style={{ fontSize: 28 }}>🎁</Text></View>
-                }
-                <View style={styles.cardBody}>
-                  <Text style={styles.cardName}>{item.name}</Text>
-                  <Text style={styles.cardCategory}>{item.category} · {item.occasion === 'Christmas' ? '🎄' : '🎂'} {item.occasion}</Text>
-                  {item.price != null ? (
-                    <Text style={styles.cardPrice}>${parseFloat(item.price).toFixed(2)}{item.retailer ? ` · ${item.retailer}` : ''}</Text>
-                  ) : null}
-                </View>
-                <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuItem(item)}>
-                  <Text style={styles.menuBtnText}>•••</Text>
+              <View style={styles.card}>
+                <TouchableOpacity style={styles.cardMain} onPress={() => setDetailItem(item)} activeOpacity={0.75}>
+                  {item.imageUri
+                    ? <Image source={{ uri: item.imageUri }} style={styles.cardImage} />
+                    : <View style={styles.cardImagePlaceholder}><Text style={{ fontSize: 28 }}>🎁</Text></View>
+                  }
+                  <View style={styles.cardBody}>
+                    <Text style={styles.cardName}>{item.name}</Text>
+                    <Text style={styles.cardCategory}>{item.category} · {item.occasion === 'Christmas' ? '🎄' : '🎂'} {item.occasion}</Text>
+                    {item.price != null ? (
+                      <Text style={styles.cardPrice}>${parseFloat(item.price).toFixed(2)}{item.retailer ? ` · ${item.retailer}` : ''}</Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuItem(item)}>
+                    <Text style={styles.menuBtnText}>•••</Text>
+                  </TouchableOpacity>
                 </TouchableOpacity>
-              </TouchableOpacity>
+
+                {item.searchQuery ? (
+                  <View style={styles.retailerRow}>
+                    {RETAILERS.map((r) => (
+                      <TouchableOpacity
+                        key={r.name}
+                        style={[styles.retailerChip, { borderColor: r.color }]}
+                        onPress={() => Linking.openURL(r.searchUrl(item.searchQuery))}
+                      >
+                        <Text style={[styles.retailerChipText, { color: r.color }]}>{r.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
             )}
           />
         </>
@@ -335,7 +357,8 @@ const styles = StyleSheet.create({
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { fontSize: 20, fontWeight: '700', color: '#333' },
   emptySubtext: { fontSize: 14, color: '#888', marginTop: 8, textAlign: 'center', paddingHorizontal: 40 },
-  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9f9f9', borderRadius: 14, marginBottom: 12, overflow: 'hidden' },
+  card: { backgroundColor: '#f9f9f9', borderRadius: 14, marginBottom: 12, overflow: 'hidden' },
+  cardMain: { flexDirection: 'row', alignItems: 'center' },
   cardImage: { width: 72, height: 72, resizeMode: 'cover' },
   cardImagePlaceholder: { width: 72, height: 72, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' },
   cardBody: { flex: 1, padding: 12 },
@@ -344,6 +367,9 @@ const styles = StyleSheet.create({
   cardPrice: { fontSize: 13, color: '#2e7d32', fontWeight: '700', marginTop: 2 },
   menuBtn: { padding: 16 },
   menuBtnText: { color: '#aaa', fontSize: 16, letterSpacing: 1 },
+  retailerRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 },
+  retailerChip: { flex: 1, borderWidth: 1.5, borderRadius: 8, paddingVertical: 6, alignItems: 'center' },
+  retailerChipText: { fontSize: 12, fontWeight: '700' },
 
   // Shared modal overlay
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },

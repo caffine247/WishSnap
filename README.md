@@ -1,18 +1,19 @@
 # 🎁 WishSnap
 
-Snap a photo of your child holding an item they want — WishSnap uses AI to identify it, confirms with you, looks up the current price, and helps you share the list with family.
+Snap a photo of your child holding an item they want — WishSnap uses AI to identify it, confirms with you, looks up live prices across retailers, and lets you share the list with family.
 
 ## Features
 
 - **AI-powered photo recognition** — powered by GPT-4o Vision, identifies toys, games, books, and more from a photo
 - **AI confidence confirmation** — shows a confidence message (🎯 high / 🤔 medium / ❓ low) and lets you correct the item name before saving
-- **Live price lookup** — fetches the current price from your preferred retailer automatically
-- **Christmas & Birthday lists** — organize wishes by occasion
-- **Multi-retailer search** — search Amazon, Walmart, or Target instantly
-- **Shareable links** — generate a public link to share the wishlist with grandparents and family — no app needed, opens in any browser
-- **Cloud sync** — lists are saved to the cloud so parents can view from any device
+- **Multi-retailer price comparison** — fetches live prices from Amazon, Walmart, and Target simultaneously, shown side-by-side on the result card
+- **Christmas & Birthday lists** — organize wishes by occasion per child
+- **Per-child profiles** — add a profile for each child with name, avatar color, and birthday; age and upcoming birthday badge shown automatically
+- **Wishlist management** — move items between children or remove them via an action sheet
+- **Shareable links** — generate a public link to share any child's list with grandparents and family — no app needed, opens in any browser
+- **User profiles** — first/last name captured at registration, editable from the Profile tab
+- **Cloud sync** — everything saved to Firestore, accessible from any device
 - **Family accounts** — sign up and log in with email/password via Firebase Auth
-- **Settings** — choose your preferred retailer for price lookups
 
 ## Tech Stack
 
@@ -32,7 +33,7 @@ Snap a photo of your child holding an item they want — WishSnap uses AI to ide
 - [Expo Go](https://expo.dev/client) app on your phone
 - OpenAI API key with billing enabled
 - Firebase project with Auth and Firestore enabled
-- RapidAPI key (free tier) for price lookup
+- RapidAPI key (free tier) for [Real-Time Product Search](https://rapidapi.com/letscrape-6bRBa3QguO5/api/real-time-product-search)
 
 ### Installation
 
@@ -47,7 +48,7 @@ Snap a photo of your child holding an item they want — WishSnap uses AI to ide
    npm install
    ```
 
-3. **Create your `.env` file** in the project root:
+3. **Create your `.env` file** in the project root (never commit this file):
    ```
    EXPO_PUBLIC_OPENAI_API_KEY=your_openai_key_here
    EXPO_PUBLIC_RAPIDAPI_KEY=your_rapidapi_key_here
@@ -93,30 +94,35 @@ WishSnap/
 │   └── share.html                # Public shareable list web page
 └── src/
     ├── context/
-    │   └── AuthContext.js        # Firebase auth state
+    │   └── AuthContext.js        # Firebase auth state + profile management
     ├── services/
     │   ├── firebase.js           # Firebase initialization
     │   ├── openai.js             # GPT-4o Vision API
-    │   ├── priceService.js       # RapidAPI price lookup
+    │   ├── priceService.js       # RapidAPI price lookup (all 3 retailers in parallel)
+    │   ├── profileService.js     # Firestore user profile read/write
+    │   ├── childrenService.js    # Firestore children sub-collection
     │   ├── shareService.js       # Firestore share link generation
-    │   └── wishlist.js           # Firestore read/write
+    │   └── wishlist.js           # Firestore wishlist read/write/move
     └── screens/
-        ├── LoginScreen.js        # Sign up / log in
-        ├── CameraScreen.js       # Photo capture, AI ID, confidence confirm
-        ├── WishlistScreen.js     # View, manage & share saved items
-        ├── DealsScreen.js        # In-app retailer search
-        └── SettingsScreen.js     # Preferred retailer selection
+        ├── LoginScreen.js        # Sign up (with name) / log in
+        ├── CameraScreen.js       # Photo capture, AI ID, confidence confirm, price compare
+        ├── WishlistScreen.js     # View, filter by child/occasion, manage & share items
+        ├── ChildrenScreen.js     # Child profiles with birthday tracking
+        ├── DealsScreen.js        # In-app retailer WebView search
+        └── SettingsScreen.js     # User profile, preferred retailer, log out
 ```
 
 ## How It Works
 
-1. Parent opens the app and taps **Snap**
-2. Take a photo of your child holding the item they want
-3. GPT-4o Vision analyzes the photo and identifies the product
-4. A **confidence card** appears — confirm the item or correct it
-5. The app automatically looks up the current price from your preferred retailer
-6. Choose to add it to the **Christmas** or **Birthday** list
-7. Tap **Share List** to generate a link you can text to grandparents or family
+1. **Register** with your name and email — a profile is created automatically
+2. **Add your children** in the Children tab — name, avatar color, and birthday
+3. Tap **Snap**, take a photo of your child holding the item they want
+4. GPT-4o Vision identifies the product and shows a **confidence card**
+5. Confirm the item (or correct the name)
+6. Live prices are fetched from **Amazon, Walmart, and Target** simultaneously
+7. Pick which child and which list (Christmas 🎄 or Birthday 🎂), then save
+8. On the **Wishlist** tab, tap `•••` on any item to move it to another child or remove it
+9. Tap **Share List** to generate a public link you can text to grandparents or family
 
 ## Running Outside Your Network
 
@@ -132,10 +138,9 @@ npx expo start --tunnel
 
 ## Roadmap
 
-- [ ] Per-child lists (e.g. "Emma's List", "Jake's List")
 - [ ] Deep links — shared URL opens directly in app
 - [ ] Price drop notifications
-- [ ] Mark items as purchased (for family members)
+- [ ] Mark items as purchased (for family members viewing the shared list)
 - [ ] App Store / TestFlight release
 
 ## License

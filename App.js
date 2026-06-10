@@ -41,7 +41,7 @@ function MainTabs() {
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ tabBarIcon: () => <Text style={{ fontSize: 22 }}>⚙️</Text>, tabBarLabel: 'Settings' }}
+        options={{ tabBarIcon: () => <Text style={{ fontSize: 22 }}>👤</Text>, tabBarLabel: 'Profile' }}
       />
     </Tab.Navigator>
   );

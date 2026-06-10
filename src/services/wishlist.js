@@ -1,6 +1,6 @@
 import { db } from './firebase';
 import {
-  collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp,
+  collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
 
 export async function addWishlistItem(userId, item) {
@@ -21,4 +21,12 @@ export async function getWishlistItems(userId, childId = null) {
 
 export async function deleteWishlistItem(itemId) {
   return deleteDoc(doc(db, 'wishlists', itemId));
+}
+
+export async function moveWishlistItem(itemId, child) {
+  return updateDoc(doc(db, 'wishlists', itemId), {
+    childId: child.id,
+    childName: child.name,
+    childColor: child.color,
+  });
 }

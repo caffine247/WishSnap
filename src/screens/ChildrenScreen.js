@@ -1,12 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
-  TextInput, Alert, Modal,
+  TextInput, Alert, Modal, ScrollView, Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { getChildren, addChild, deleteChild } from '../services/childrenService';
 import { useAuth } from '../context/AuthContext';
 
 const COLORS = ['#E8335A', '#4A90E2', '#7B68EE', '#FF9500', '#34C759', '#FF6B6B', '#5AC8FA', '#FF2D55'];
+
+function getAge(birthday) {
+  if (!birthday) return null;
+  const today = new Date();
+  const dob = new Date(birthday);
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age;
+}
+
+function getDaysUntilBirthday(birthday) {
+  if (!birthday) return null;
+  const today = new Date();
+  const dob = new Date(birthday);
+  const next = new Date(today.getFullYear(), dob.getMonth(), dob.getDate());
+  if (next < today) next.setFullYear(today.getFullYear() + 1);
+  return Math.ceil((next - today) / (1000 * 60 * 60 * 24));
+}
+
+function formatBirthday(birthday) {
+  if (!birthday) return null;
+  return new Date(birthday).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+}
 
 export default function ChildrenScreen() {
   const { user } = useAuth();
@@ -14,6 +39,8 @@ export default function ChildrenScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
   const [selectedColor, setSelectedColor] = useState(COLORS[0]);
+  const [birthday, setBirthday] = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => { loadChildren(); }, []);
 
@@ -24,18 +51,32 @@ export default function ChildrenScreen() {
 
   async function handleAdd() {
     if (!name.trim()) return Alert.alert('Please enter a name');
-    await addChild(user.uid, { name: name.trim(), color: selectedColor });
+    await addChild(user.uid, {
+      name: name.trim(),
+      color: selectedColor,
+      birthday: birthday ? birthday.toISOString() : null,
+    });
     setName('');
     setSelectedColor(COLORS[0]);
+    setBirthday(null);
+    setShowDatePicker(false);
     setModalVisible(false);
     loadChildren();
   }
 
   async function handleDelete(child) {
-    Alert.alert(`Remove ${child.name}?`, 'Their wishlist items will remain but won\'t be linked to this profile.', [
+    Alert.alert(`Remove ${child.name}?`, "Their wishlist items will remain but won't be linked to this profile.", [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: async () => { await deleteChild(user.uid, child.id); loadChildren(); } },
     ]);
+  }
+
+  function closeModal() {
+    setName('');
+    setSelectedColor(COLORS[0]);
+    setBirthday(null);
+    setShowDatePicker(false);
+    setModalVisible(false);
   }
 
   return (
@@ -53,17 +94,38 @@ export default function ChildrenScreen() {
           data={children}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 24 }}
-          renderItem={({ item }) => (
-            <View style={styles.childCard}>
-              <View style={[styles.avatar, { backgroundColor: item.color }]}>
-                <Text style={styles.avatarText}>{item.name[0].toUpperCase()}</Text>
+          renderItem={({ item }) => {
+            const age = getAge(item.birthday);
+            const daysUntil = getDaysUntilBirthday(item.birthday);
+            const isSoon = daysUntil !== null && daysUntil <= 30;
+            return (
+              <View style={styles.childCard}>
+                <View style={[styles.avatar, { backgroundColor: item.color }]}>
+                  <Text style={styles.avatarText}>{item.name[0].toUpperCase()}</Text>
+                </View>
+                <View style={styles.childInfo}>
+                  <View style={styles.childNameRow}>
+                    <Text style={styles.childName}>{item.name}</Text>
+                    {isSoon && (
+                      <View style={styles.birthdayBadge}>
+                        <Text style={styles.birthdayBadgeText}>🎂 {daysUntil === 0 ? 'Today!' : `in ${daysUntil}d`}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {item.birthday ? (
+                    <Text style={styles.childMeta}>
+                      {formatBirthday(item.birthday)}{age !== null ? ` · Age ${age}` : ''}
+                    </Text>
+                  ) : (
+                    <Text style={styles.childMetaMuted}>No birthday set</Text>
+                  )}
+                </View>
+                <TouchableOpacity onPress={() => handleDelete(item)}>
+                  <Text style={styles.deleteBtn}>✕</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.childName}>{item.name}</Text>
-              <TouchableOpacity onPress={() => handleDelete(item)}>
-                <Text style={styles.deleteBtn}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+            );
+          }}
         />
       )}
 
@@ -71,9 +133,9 @@ export default function ChildrenScreen() {
         <Text style={styles.addButtonText}>+ Add Child</Text>
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} transparent animationType="slide">
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <ScrollView contentContainerStyle={styles.modalCard} keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>Add a Child</Text>
 
             <TextInput
@@ -84,7 +146,34 @@ export default function ChildrenScreen() {
               autoFocus
             />
 
-            <Text style={styles.colorLabel}>Pick an avatar color:</Text>
+            <Text style={styles.colorLabel}>Birthday:</Text>
+            <TouchableOpacity style={styles.birthdayButton} onPress={() => setShowDatePicker(!showDatePicker)}>
+              <Text style={styles.birthdayButtonText}>
+                {birthday ? birthday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Select birthday (optional)'}
+              </Text>
+              <Text style={styles.birthdayButtonIcon}>📅</Text>
+            </TouchableOpacity>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={birthday || new Date(2018, 0, 1)}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()}
+                onChange={(_, date) => {
+                  if (Platform.OS === 'android') setShowDatePicker(false);
+                  if (date) setBirthday(date);
+                }}
+              />
+            )}
+
+            {birthday && (
+              <TouchableOpacity onPress={() => setBirthday(null)} style={styles.clearBirthday}>
+                <Text style={styles.clearBirthdayText}>✕  Clear birthday</Text>
+              </TouchableOpacity>
+            )}
+
+            <Text style={[styles.colorLabel, { marginTop: 16 }]}>Pick an avatar color:</Text>
             <View style={styles.colorRow}>
               {COLORS.map((c) => (
                 <TouchableOpacity
@@ -100,14 +189,14 @@ export default function ChildrenScreen() {
             </View>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
+              <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveButton} onPress={handleAdd}>
                 <Text style={styles.saveButtonText}>Add</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -124,17 +213,28 @@ const styles = StyleSheet.create({
   childCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9f9f9', borderRadius: 14, padding: 12, marginBottom: 10 },
   avatar: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   avatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  childName: { flex: 1, fontSize: 17, fontWeight: '600' },
+  childInfo: { flex: 1 },
+  childNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  childName: { fontSize: 17, fontWeight: '600' },
+  childMeta: { fontSize: 13, color: '#888', marginTop: 2 },
+  childMetaMuted: { fontSize: 13, color: '#ccc', marginTop: 2 },
+  birthdayBadge: { backgroundColor: '#fff3e0', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  birthdayBadgeText: { fontSize: 11, fontWeight: '700', color: '#e65100' },
   deleteBtn: { color: '#ccc', fontSize: 18, padding: 8 },
   addButton: { margin: 24, backgroundColor: '#E8335A', borderRadius: 14, padding: 16, alignItems: 'center' },
   addButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 },
+  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 22, fontWeight: '800', marginBottom: 20 },
   input: { borderWidth: 1.5, borderColor: '#ddd', borderRadius: 12, padding: 14, fontSize: 16, marginBottom: 16 },
   colorLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 10 },
+  birthdayButton: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1.5, borderColor: '#ddd', borderRadius: 12, padding: 14, marginBottom: 8 },
+  birthdayButtonText: { fontSize: 15, color: '#555' },
+  birthdayButtonIcon: { fontSize: 18 },
+  clearBirthday: { marginBottom: 8 },
+  clearBirthdayText: { fontSize: 13, color: '#aaa', textAlign: 'right' },
   colorRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   colorDot: { width: 32, height: 32, borderRadius: 16 },
   colorDotSelected: { borderWidth: 3, borderColor: '#222' },

@@ -1,15 +1,9 @@
 const RAPIDAPI_KEY = process.env.EXPO_PUBLIC_RAPIDAPI_KEY;
 
-const RETAILER_CONFIG = {
-  Amazon: { tbs: 'Amazon' },
-  Walmart: { tbs: 'Walmart' },
-  Target: { tbs: 'Target' },
-};
+const RETAILERS = ['Amazon', 'Walmart', 'Target'];
 
-export async function fetchPrice(searchQuery, retailer = 'Amazon') {
-  const config = RETAILER_CONFIG[retailer] || RETAILER_CONFIG.Amazon;
-
-  const url = `https://real-time-product-search.p.rapidapi.com/search?q=${encodeURIComponent(searchQuery)}&country=us&language=en&limit=3`;
+async function fetchPrice(searchQuery, retailer) {
+  const url = `https://real-time-product-search.p.rapidapi.com/search?q=${encodeURIComponent(searchQuery)}&country=us&language=en&limit=5`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -20,12 +14,9 @@ export async function fetchPrice(searchQuery, retailer = 'Amazon') {
   });
 
   const data = await response.json();
-  console.log('Price API response:', JSON.stringify(data).slice(0, 500));
-
   const products = data?.data?.products || data?.products || [];
   if (!products.length) return null;
 
-  // Find first product with a price from the preferred retailer, or just first result
   const match =
     products.find((p) =>
       p.offer?.store_name?.toLowerCase().includes(retailer.toLowerCase())
@@ -41,4 +32,15 @@ export async function fetchPrice(searchQuery, retailer = 'Amazon') {
     priceDate: new Date().toISOString(),
     productUrl: match?.offer?.offer_page_url || null,
   };
+}
+
+// Fetch prices from all three retailers in parallel.
+// Returns { Amazon: {...}|null, Walmart: {...}|null, Target: {...}|null }
+export async function fetchAllPrices(searchQuery) {
+  const results = await Promise.allSettled(
+    RETAILERS.map((r) => fetchPrice(searchQuery, r))
+  );
+  return Object.fromEntries(
+    RETAILERS.map((r, i) => [r, results[i].status === 'fulfilled' ? results[i].value : null])
+  );
 }

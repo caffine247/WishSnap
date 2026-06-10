@@ -6,7 +6,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { identifyItemFromPhoto } from '../services/openai';
-import { fetchPrice } from '../services/priceService';
+import { fetchAllPrices } from '../services/priceService';
 import { addWishlistItem } from '../services/wishlist';
 import { getChildren } from '../services/childrenService';
 import { useAuth } from '../context/AuthContext';
@@ -31,7 +31,7 @@ export default function CameraScreen({ navigation }) {
   const [correcting, setCorrecting] = useState(false);   // user is editing name
   const [correctedName, setCorrectedName] = useState('');
   const [result, setResult] = useState(null);            // confirmed result
-  const [priceInfo, setPriceInfo] = useState(null);
+  const [prices, setPrices] = useState({});
   const [loading, setLoading] = useState(false);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [occasion, setOccasion] = useState('Christmas');
@@ -52,7 +52,7 @@ export default function CameraScreen({ navigation }) {
     setCorrecting(false);
     setCorrectedName('');
     setResult(null);
-    setPriceInfo(null);
+    setPrices({});
   }
 
   async function pickImage() {
@@ -74,7 +74,7 @@ export default function CameraScreen({ navigation }) {
     setIdentified(null);
     setConfirmed(false);
     setResult(null);
-    setPriceInfo(null);
+    setPrices({});
     try {
       const data = await identifyItemFromPhoto(base64);
       setIdentified(data);
@@ -114,9 +114,8 @@ export default function CameraScreen({ navigation }) {
   async function lookupPrice(searchQuery) {
     setLoadingPrice(true);
     try {
-      const retailer = (await AsyncStorage.getItem('preferredRetailer')) || 'Amazon';
-      const price = await fetchPrice(searchQuery, retailer);
-      setPriceInfo(price);
+      const all = await fetchAllPrices(searchQuery);
+      setPrices(all);
     } catch (e) {
       console.log('Price fetch error:', e.message);
     } finally {
@@ -127,17 +126,20 @@ export default function CameraScreen({ navigation }) {
   async function saveToWishlist() {
     if (!result) return;
     if (children.length > 0 && !selectedChild) return Alert.alert('Please select a child');
+    // Save the lowest available price
+    const preferredRetailer = (await AsyncStorage.getItem('preferredRetailer')) || 'Amazon';
+    const bestPrice = prices[preferredRetailer] || prices.Amazon || prices.Walmart || prices.Target || null;
     await addWishlistItem(user.uid, {
       name: result.name,
       category: result.category,
       searchQuery: result.searchQuery,
       occasion,
       imageUri: image,
-      price: priceInfo?.price || null,
-      currency: priceInfo?.currency || null,
-      retailer: priceInfo?.retailer || null,
-      priceDate: priceInfo?.priceDate || null,
-      productUrl: priceInfo?.productUrl || null,
+      price: bestPrice?.price || null,
+      currency: bestPrice?.currency || null,
+      retailer: bestPrice?.retailer || null,
+      priceDate: bestPrice?.priceDate || null,
+      productUrl: bestPrice?.productUrl || null,
       childId: selectedChild?.id || null,
       childName: selectedChild?.name || null,
       childColor: selectedChild?.color || null,
@@ -218,19 +220,8 @@ export default function CameraScreen({ navigation }) {
           {loadingPrice && (
             <View style={styles.priceLoading}>
               <ActivityIndicator size="small" color="#E8335A" />
-              <Text style={styles.priceLoadingText}>Looking up price...</Text>
+              <Text style={styles.priceLoadingText}>Looking up prices...</Text>
             </View>
-          )}
-
-          {priceInfo && !loadingPrice && (
-            <View style={styles.priceBadge}>
-              <Text style={styles.priceAmount}>${priceInfo.price.toFixed(2)}</Text>
-              <Text style={styles.priceRetailer}>on {priceInfo.retailer}</Text>
-            </View>
-          )}
-
-          {!priceInfo && !loadingPrice && (
-            <Text style={styles.noPriceText}>Price unavailable — check retailers below</Text>
           )}
 
           {children.length > 0 && (
@@ -274,16 +265,26 @@ export default function CameraScreen({ navigation }) {
             <Text style={styles.saveButtonText}>Add to Wishlist</Text>
           </TouchableOpacity>
 
-          <Text style={styles.sectionLabel}>Search for deals:</Text>
-          {RETAILERS.map((r) => (
-            <TouchableOpacity
-              key={r.name}
-              style={styles.retailerButton}
-              onPress={() => navigation.navigate('Deals', { retailer: r, query: result.searchQuery })}
-            >
-              <Text style={styles.retailerText}>Search {r.name} →</Text>
-            </TouchableOpacity>
-          ))}
+          <Text style={styles.sectionLabel}>Prices &amp; deals:</Text>
+          {RETAILERS.map((r) => {
+            const p = prices[r.name];
+            return (
+              <TouchableOpacity
+                key={r.name}
+                style={styles.retailerButton}
+                onPress={() => navigation.navigate('Deals', { retailer: r, query: result.searchQuery })}
+              >
+                <Text style={styles.retailerText}>{r.name}</Text>
+                {loadingPrice ? (
+                  <ActivityIndicator size="small" color="#aaa" />
+                ) : p ? (
+                  <Text style={styles.retailerPrice}>${p.price.toFixed(2)}</Text>
+                ) : (
+                  <Text style={styles.retailerNoPrice}>See deals →</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
     </ScrollView>
@@ -325,10 +326,6 @@ const styles = StyleSheet.create({
   itemCategory: { fontSize: 14, color: '#888', marginBottom: 12, textTransform: 'capitalize' },
   priceLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   priceLoadingText: { color: '#888', fontSize: 13 },
-  priceBadge: { flexDirection: 'row', alignItems: 'baseline', gap: 6, backgroundColor: '#e8f5e9', borderRadius: 10, padding: 10, marginBottom: 12 },
-  priceAmount: { fontSize: 22, fontWeight: '800', color: '#2e7d32' },
-  priceRetailer: { fontSize: 13, color: '#555' },
-  noPriceText: { fontSize: 13, color: '#aaa', marginBottom: 12, fontStyle: 'italic' },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 8, marginTop: 8 },
   occasionRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   occasionButton: { flex: 1, borderWidth: 2, borderColor: '#E8335A', borderRadius: 10, padding: 10, alignItems: 'center' },
@@ -336,8 +333,10 @@ const styles = StyleSheet.create({
   occasionText: { color: '#E8335A', fontWeight: '600' },
   saveButton: { backgroundColor: '#E8335A', borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 16 },
   saveButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  retailerButton: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, marginBottom: 8 },
-  retailerText: { fontSize: 15, color: '#333' },
+  retailerButton: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 14, marginBottom: 8 },
+  retailerText: { fontSize: 15, color: '#333', fontWeight: '600' },
+  retailerPrice: { fontSize: 16, fontWeight: '800', color: '#2e7d32' },
+  retailerNoPrice: { fontSize: 13, color: '#aaa' },
   childChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
   chipAvatar: { width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center' },
   chipAvatarText: { color: '#fff', fontSize: 11, fontWeight: '800' },

@@ -1,25 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, Image, Share, ScrollView } from 'react-native';
-import { getWishlistItems, deleteWishlistItem } from '../services/wishlist';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import {
+  View, Text, FlatList, TouchableOpacity, StyleSheet, Alert,
+  Image, Share, ScrollView, Modal
+} from 'react-native';
+import { getWishlistItems, deleteWishlistItem, moveWishlistItem } from '../services/wishlist';
 import { getChildren } from '../services/childrenService';
 import { createShareLink } from '../services/shareService';
 import { useAuth } from '../context/AuthContext';
 
 export default function WishlistScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [children, setChildren] = useState([]);
   const [selectedChild, setSelectedChild] = useState(null);
   const [filter, setFilter] = useState('All');
   const [sharing, setSharing] = useState(false);
+  const [menuItem, setMenuItem] = useState(null); // item currently showing menu
 
-  useEffect(() => {
-    loadChildren();
-  }, []);
-
-  useEffect(() => {
-    loadItems();
-  }, [selectedChild]);
+  useFocusEffect(useCallback(() => { loadChildren(); }, []));
+  useEffect(() => { loadItems(); }, [selectedChild]);
 
   async function loadChildren() {
     const data = await getChildren(user.uid);
@@ -32,11 +32,25 @@ export default function WishlistScreen({ navigation }) {
     setItems(data);
   }
 
-  async function handleDelete(id) {
-    Alert.alert('Remove item?', 'This will remove it from the wishlist.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => { await deleteWishlistItem(id); loadItems(); } },
-    ]);
+  async function handleDelete(item) {
+    Alert.alert(
+      'Remove item?',
+      `Remove "${item.name}" from the wishlist?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: async () => {
+          await deleteWishlistItem(item.id);
+          setMenuItem(null);
+          loadItems();
+        }},
+      ]
+    );
+  }
+
+  async function handleMove(item, targetChild) {
+    await moveWishlistItem(item.id, targetChild);
+    setMenuItem(null);
+    loadItems();
   }
 
   async function handleShare() {
@@ -54,14 +68,12 @@ export default function WishlistScreen({ navigation }) {
   }
 
   const filtered = filter === 'All' ? items : items.filter((i) => i.occasion === filter);
+  const otherChildren = children.filter((c) => c.id !== selectedChild?.id);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>🎁 Wishlist</Text>
-        <TouchableOpacity onPress={logout}>
-          <Text style={styles.logoutText}>Log out</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Child selector */}
@@ -128,14 +140,50 @@ export default function WishlistScreen({ navigation }) {
                     <Text style={styles.cardPrice}>${item.price.toFixed(2)} · {item.retailer}</Text>
                   ) : null}
                 </View>
-                <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                  <Text style={styles.deleteBtn}>✕</Text>
+                <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuItem(item)}>
+                  <Text style={styles.menuBtnText}>•••</Text>
                 </TouchableOpacity>
               </View>
             )}
           />
         </>
       )}
+
+      {/* Action sheet */}
+      <Modal visible={!!menuItem} transparent animationType="slide" onRequestClose={() => setMenuItem(null)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setMenuItem(null)}>
+          <View style={styles.actionSheet}>
+            <View style={styles.actionSheetHandle} />
+            <Text style={styles.actionSheetTitle} numberOfLines={1}>{menuItem?.name}</Text>
+
+            {otherChildren.length > 0 && (
+              <>
+                <Text style={styles.actionSheetSection}>Move to</Text>
+                {otherChildren.map((child) => (
+                  <TouchableOpacity
+                    key={child.id}
+                    style={styles.actionItem}
+                    onPress={() => handleMove(menuItem, child)}
+                  >
+                    <View style={[styles.actionAvatar, { backgroundColor: child.color }]}>
+                      <Text style={styles.actionAvatarText}>{child.name[0].toUpperCase()}</Text>
+                    </View>
+                    <Text style={styles.actionItemText}>{child.name}'s list</Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            <TouchableOpacity style={styles.actionItemDestructive} onPress={() => handleDelete(menuItem)}>
+              <Text style={styles.actionItemDestructiveText}>🗑  Remove item</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionCancel} onPress={() => setMenuItem(null)}>
+              <Text style={styles.actionCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -164,6 +212,22 @@ const styles = StyleSheet.create({
   cardBody: { flex: 1, padding: 12 },
   cardName: { fontSize: 16, fontWeight: '700' },
   cardCategory: { fontSize: 13, color: '#888', marginTop: 2, textTransform: 'capitalize' },
-  deleteBtn: { padding: 16, color: '#ccc', fontSize: 18 },
   cardPrice: { fontSize: 13, color: '#2e7d32', fontWeight: '700', marginTop: 2 },
+  menuBtn: { padding: 16 },
+  menuBtnText: { color: '#aaa', fontSize: 16, letterSpacing: 1 },
+
+  // Action sheet
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  actionSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
+  actionSheetHandle: { width: 40, height: 4, backgroundColor: '#ddd', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  actionSheetTitle: { fontSize: 16, fontWeight: '700', color: '#333', marginBottom: 16, textAlign: 'center' },
+  actionSheetSection: { fontSize: 12, fontWeight: '600', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+  actionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: '#f9f9f9', borderRadius: 12, marginBottom: 8 },
+  actionAvatar: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  actionAvatarText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  actionItemText: { fontSize: 16, fontWeight: '600', color: '#333' },
+  actionItemDestructive: { padding: 14, backgroundColor: '#fff0f0', borderRadius: 12, alignItems: 'center', marginTop: 4, marginBottom: 8 },
+  actionItemDestructiveText: { fontSize: 16, fontWeight: '600', color: '#E8335A' },
+  actionCancel: { padding: 14, alignItems: 'center' },
+  actionCancelText: { fontSize: 16, color: '#888', fontWeight: '600' },
 });

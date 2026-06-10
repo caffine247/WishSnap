@@ -4,6 +4,7 @@ import {
   ActivityIndicator, ScrollView, TextInput
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { identifyItemFromPhoto } from '../services/openai';
 import { fetchAllPrices } from '../services/priceService';
@@ -23,15 +24,45 @@ const CONFIDENCE_MESSAGES = {
   low: "I'm not totally sure, but this could be",
 };
 
+const PRICE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+async function compressImageForAI(uri) {
+  const manipulated = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ resize: { width: 512 } }],
+    { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+  );
+  return manipulated.base64;
+}
+
+async function getCachedPrices(searchQuery) {
+  try {
+    const raw = await AsyncStorage.getItem(`prices:${searchQuery}`);
+    if (!raw) return null;
+    const { prices, cachedAt } = JSON.parse(raw);
+    if (Date.now() - cachedAt > PRICE_CACHE_TTL_MS) return null;
+    return prices;
+  } catch {
+    return null;
+  }
+}
+
+async function cachePrices(searchQuery, prices) {
+  try {
+    await AsyncStorage.setItem(`prices:${searchQuery}`, JSON.stringify({ prices, cachedAt: Date.now() }));
+  } catch {}
+}
+
 export default function CameraScreen({ navigation }) {
   const { user } = useAuth();
   const [image, setImage] = useState(null);
-  const [identified, setIdentified] = useState(null);   // raw AI result
-  const [confirmed, setConfirmed] = useState(false);     // user confirmed item
-  const [correcting, setCorrecting] = useState(false);   // user is editing name
+  const [identified, setIdentified] = useState(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const [correctedName, setCorrectedName] = useState('');
-  const [result, setResult] = useState(null);            // confirmed result
+  const [result, setResult] = useState(null);
   const [prices, setPrices] = useState({});
+  const [priceCached, setPriceCached] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [occasion, setOccasion] = useState('Christmas');
@@ -53,20 +84,31 @@ export default function CameraScreen({ navigation }) {
     setCorrectedName('');
     setResult(null);
     setPrices({});
+    setPriceCached(false);
   }
 
   async function pickImage() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return Alert.alert('Permission needed to access photos');
-    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7, base64: true });
-    if (!picked.canceled) { setImage(picked.assets[0].uri); analyzeImage(picked.assets[0].base64); }
+    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (!picked.canceled) {
+      const uri = picked.assets[0].uri;
+      setImage(uri);
+      const base64 = await compressImageForAI(uri);
+      analyzeImage(base64);
+    }
   }
 
   async function takePhoto() {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert('Permission needed to use camera');
-    const picked = await ImagePicker.launchCameraAsync({ quality: 0.7, base64: true });
-    if (!picked.canceled) { setImage(picked.assets[0].uri); analyzeImage(picked.assets[0].base64); }
+    const picked = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    if (!picked.canceled) {
+      const uri = picked.assets[0].uri;
+      setImage(uri);
+      const base64 = await compressImageForAI(uri);
+      analyzeImage(base64);
+    }
   }
 
   async function analyzeImage(base64) {
@@ -75,23 +117,34 @@ export default function CameraScreen({ navigation }) {
     setConfirmed(false);
     setResult(null);
     setPrices({});
+    setPriceCached(false);
     try {
       const data = await identifyItemFromPhoto(base64);
       setIdentified(data);
       setCorrectedName(data.name);
     } catch (e) {
-      console.log('Vision error:', e.message);
       Alert.alert('Could not identify item', e.message || 'Try a clearer photo with the item more visible.');
     } finally {
       setLoading(false);
     }
   }
 
-  function handleConfirm() {
-    const finalResult = { ...identified, name: identified.name };
+  async function confirmItem(finalResult) {
     setResult(finalResult);
     setConfirmed(true);
-    lookupPrice(finalResult.searchQuery);
+
+    // Check cache first, fall back to API
+    const cached = await getCachedPrices(finalResult.searchQuery);
+    if (cached) {
+      setPrices(cached);
+      setPriceCached(true);
+    } else {
+      lookupPrice(finalResult.searchQuery);
+    }
+  }
+
+  function handleConfirm() {
+    confirmItem({ ...identified });
   }
 
   function handleCorrect() {
@@ -100,23 +153,21 @@ export default function CameraScreen({ navigation }) {
 
   function handleApplyCorrection() {
     if (!correctedName.trim()) return;
-    const finalResult = {
+    setCorrecting(false);
+    confirmItem({
       ...identified,
       name: correctedName.trim(),
       searchQuery: correctedName.trim(),
-    };
-    setResult(finalResult);
-    setConfirmed(true);
-    setCorrecting(false);
-    lookupPrice(finalResult.searchQuery);
+    });
   }
 
   async function lookupPrice(searchQuery) {
     setLoadingPrice(true);
+    setPriceCached(false);
     try {
       const all = await fetchAllPrices(searchQuery);
-      console.log('Prices fetched:', JSON.stringify(all));
       setPrices(all);
+      await cachePrices(searchQuery, all);
     } catch (e) {
       console.log('Price fetch error:', e.message);
     } finally {
@@ -127,7 +178,6 @@ export default function CameraScreen({ navigation }) {
   async function saveToWishlist() {
     if (!result) return;
     if (children.length > 0 && !selectedChild) return Alert.alert('Please select a child');
-    // Save the lowest available price
     const preferredRetailer = (await AsyncStorage.getItem('preferredRetailer')) || 'Amazon';
     const bestPrice = prices[preferredRetailer] || prices.Amazon || prices.Walmart || prices.Target || null;
     await addWishlistItem(user.uid, {
@@ -174,7 +224,7 @@ export default function CameraScreen({ navigation }) {
         </View>
       )}
 
-      {/* ── Confidence confirmation step ── */}
+      {/* Confidence confirmation step */}
       {identified && !confirmed && !loading && (
         <View style={styles.confirmCard}>
           <Text style={styles.confidenceEmoji}>
@@ -212,18 +262,11 @@ export default function CameraScreen({ navigation }) {
         </View>
       )}
 
-      {/* ── Full result card after confirmation ── */}
+      {/* Result card after confirmation */}
       {result && confirmed && (
         <View style={styles.resultCard}>
           <Text style={styles.itemName}>{result.name}</Text>
           <Text style={styles.itemCategory}>{result.category}</Text>
-
-          {loadingPrice && (
-            <View style={styles.priceLoading}>
-              <ActivityIndicator size="small" color="#E8335A" />
-              <Text style={styles.priceLoadingText}>Looking up prices...</Text>
-            </View>
-          )}
 
           {children.length > 0 && (
             <>
@@ -266,7 +309,16 @@ export default function CameraScreen({ navigation }) {
             <Text style={styles.saveButtonText}>Add to Wishlist</Text>
           </TouchableOpacity>
 
-          <Text style={styles.sectionLabel}>Prices &amp; deals:</Text>
+          <View style={styles.pricesHeader}>
+            <Text style={styles.sectionLabel}>Prices &amp; deals:</Text>
+            {priceCached && <Text style={styles.cachedLabel}>cached</Text>}
+            {!loadingPrice && !priceCached && (
+              <TouchableOpacity onPress={() => lookupPrice(result.searchQuery)}>
+                <Text style={styles.refreshLabel}>🔄 refresh</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           {RETAILERS.map((r) => {
             const p = prices[r.name];
             return (
@@ -325,9 +377,10 @@ const styles = StyleSheet.create({
   resultCard: { backgroundColor: '#f9f9f9', borderRadius: 16, padding: 20 },
   itemName: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
   itemCategory: { fontSize: 14, color: '#888', marginBottom: 12, textTransform: 'capitalize' },
-  priceLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  priceLoadingText: { color: '#888', fontSize: 13 },
+  pricesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 8, marginTop: 8 },
+  cachedLabel: { fontSize: 11, color: '#aaa', fontStyle: 'italic', marginBottom: 4 },
+  refreshLabel: { fontSize: 12, color: '#E8335A', fontWeight: '600', marginBottom: 4 },
   occasionRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   occasionButton: { flex: 1, borderWidth: 2, borderColor: '#E8335A', borderRadius: 10, padding: 10, alignItems: 'center' },
   occasionActive: { backgroundColor: '#E8335A' },

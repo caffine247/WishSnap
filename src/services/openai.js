@@ -8,28 +8,27 @@ export async function identifyItemFromPhoto(base64Image) {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model: 'gpt-4o-mini',
       messages: [
         {
           role: 'user',
           content: [
             {
               type: 'text',
-              text: 'This is a photo of a child holding or pointing at an item they want as a gift. Identify the item as specifically as possible. Return a JSON object with: { "name": "product name", "category": "toy/game/book/etc", "searchQuery": "best search query to find this on a shopping site", "confidence": "high/medium/low" }. Return only the JSON, no other text.',
+              text: 'Identify the gift item in this photo. Return only JSON: { "name": "product name", "category": "toy/game/book/etc", "searchQuery": "shopping search query", "confidence": "high/medium/low" }',
             },
             {
               type: 'image_url',
-              image_url: { url: `data:image/jpeg;base64,${base64Image}` },
+              image_url: { url: `data:image/jpeg;base64,${base64Image}`, detail: 'low' },
             },
           ],
         },
       ],
-      max_tokens: 300,
+      max_tokens: 150,
     }),
   });
 
   const data = await response.json();
-  console.log('OpenAI response:', JSON.stringify(data));
   if (data.error) throw new Error(data.error.message);
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('No content in response');

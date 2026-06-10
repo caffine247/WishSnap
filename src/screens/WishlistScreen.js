@@ -2,9 +2,10 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, Alert,
-  Image, Share, ScrollView, Modal
+  Image, Share, ScrollView, Modal, Linking,
 } from 'react-native';
-import { getWishlistItems, deleteWishlistItem, moveWishlistItem } from '../services/wishlist';
+import { getWishlistItems, deleteWishlistItem, moveWishlistItem, updateWishlistItem } from '../services/wishlist';
+import { fetchAllPrices } from '../services/priceService';
 import { getChildren } from '../services/childrenService';
 import { createShareLink } from '../services/shareService';
 import { useAuth } from '../context/AuthContext';
@@ -16,7 +17,9 @@ export default function WishlistScreen({ navigation }) {
   const [selectedChild, setSelectedChild] = useState(null);
   const [filter, setFilter] = useState('All');
   const [sharing, setSharing] = useState(false);
-  const [menuItem, setMenuItem] = useState(null); // item currently showing menu
+  const [detailItem, setDetailItem] = useState(null);
+  const [menuItem, setMenuItem] = useState(null);
+  const [refreshingPrice, setRefreshingPrice] = useState(false);
 
   useFocusEffect(useCallback(() => { loadChildren(); }, []));
   useEffect(() => { loadItems(); }, [selectedChild]);
@@ -41,6 +44,7 @@ export default function WishlistScreen({ navigation }) {
         { text: 'Remove', style: 'destructive', onPress: async () => {
           await deleteWishlistItem(item.id);
           setMenuItem(null);
+          setDetailItem(null);
           loadItems();
         }},
       ]
@@ -64,6 +68,33 @@ export default function WishlistScreen({ navigation }) {
       Alert.alert('Could not create share link', e.message);
     } finally {
       setSharing(false);
+    }
+  }
+
+  async function handleRefreshPrice(item) {
+    if (!item.searchQuery) return Alert.alert('No search query saved for this item');
+    setRefreshingPrice(true);
+    try {
+      const prices = await fetchAllPrices(item.searchQuery);
+      const best = prices.Amazon || prices.Walmart || prices.Target || null;
+      if (!best) {
+        Alert.alert('No price found', 'Could not find a price for this item right now.');
+        return;
+      }
+      await updateWishlistItem(item.id, {
+        price: best.price,
+        currency: best.currency,
+        retailer: best.retailer,
+        priceDate: best.priceDate,
+        productUrl: best.productUrl,
+      });
+      const updated = { ...item, ...best };
+      setDetailItem(updated);
+      setItems((prev) => prev.map((i) => i.id === item.id ? updated : i));
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setRefreshingPrice(false);
     }
   }
 
@@ -131,28 +162,126 @@ export default function WishlistScreen({ navigation }) {
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ padding: 16 }}
             renderItem={({ item }) => (
-              <View style={styles.card}>
-                {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.cardImage} />}
+              <TouchableOpacity style={styles.card} onPress={() => setDetailItem(item)} activeOpacity={0.75}>
+                {item.imageUri
+                  ? <Image source={{ uri: item.imageUri }} style={styles.cardImage} />
+                  : <View style={styles.cardImagePlaceholder}><Text style={{ fontSize: 28 }}>🎁</Text></View>
+                }
                 <View style={styles.cardBody}>
                   <Text style={styles.cardName}>{item.name}</Text>
                   <Text style={styles.cardCategory}>{item.category} · {item.occasion === 'Christmas' ? '🎄' : '🎂'} {item.occasion}</Text>
-                  {item.price ? (
-                    <Text style={styles.cardPrice}>${item.price.toFixed(2)} · {item.retailer}</Text>
+                  {item.price != null ? (
+                    <Text style={styles.cardPrice}>${parseFloat(item.price).toFixed(2)}{item.retailer ? ` · ${item.retailer}` : ''}</Text>
                   ) : null}
                 </View>
                 <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuItem(item)}>
                   <Text style={styles.menuBtnText}>•••</Text>
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             )}
           />
         </>
       )}
 
+      {/* Item detail modal */}
+      <Modal visible={!!detailItem} transparent animationType="slide" onRequestClose={() => setDetailItem(null)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setDetailItem(null)}>
+          <View style={styles.detailSheet} onStartShouldSetResponder={() => true}>
+            <View style={styles.actionSheetHandle} />
+
+            {detailItem?.imageUri && (
+              <Image source={{ uri: detailItem.imageUri }} style={styles.detailImage} />
+            )}
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.detailName}>{detailItem?.name}</Text>
+
+              <View style={styles.detailBadgeRow}>
+                {detailItem?.category ? (
+                  <View style={styles.detailBadge}>
+                    <Text style={styles.detailBadgeText}>{detailItem.category}</Text>
+                  </View>
+                ) : null}
+                <View style={[styles.detailBadge, { backgroundColor: '#fff8e1' }]}>
+                  <Text style={[styles.detailBadgeText, { color: '#e65100' }]}>
+                    {detailItem?.occasion === 'Christmas' ? '🎄' : '🎂'} {detailItem?.occasion}
+                  </Text>
+                </View>
+              </View>
+
+              {detailItem?.childName ? (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Child</Text>
+                  <Text style={styles.detailValue}>{detailItem.childName}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Price</Text>
+                {detailItem?.price != null ? (
+                  <Text style={[styles.detailValue, { color: '#2e7d32', fontWeight: '800' }]}>
+                    ${parseFloat(detailItem.price).toFixed(2)}
+                    {detailItem.retailer ? `  ·  ${detailItem.retailer}` : ''}
+                  </Text>
+                ) : (
+                  <Text style={[styles.detailValue, { color: '#aaa' }]}>Not available</Text>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.refreshButton, refreshingPrice && { opacity: 0.6 }]}
+                onPress={() => handleRefreshPrice(detailItem)}
+                disabled={refreshingPrice}
+              >
+                <Text style={styles.refreshButtonText}>
+                  {refreshingPrice ? '⏳  Looking up prices...' : '🔄  Refresh price'}
+                </Text>
+              </TouchableOpacity>
+
+              {detailItem?.priceDate ? (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Price checked</Text>
+                  <Text style={styles.detailValue}>
+                    {new Date(detailItem.priceDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Added</Text>
+                <Text style={styles.detailValue}>
+                  {detailItem?.createdAt?.seconds
+                    ? new Date(detailItem.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : '—'}
+                </Text>
+              </View>
+
+              {detailItem?.productUrl ? (
+                <TouchableOpacity style={styles.detailLinkButton} onPress={() => Linking.openURL(detailItem.productUrl)}>
+                  <Text style={styles.detailLinkText}>View on {detailItem.retailer || 'retailer'} →</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <View style={styles.detailActions}>
+                <TouchableOpacity
+                  style={styles.detailManageButton}
+                  onPress={() => { setDetailItem(null); setTimeout(() => setMenuItem(detailItem), 300); }}
+                >
+                  <Text style={styles.detailManageText}>Move / Remove</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.detailCloseButton} onPress={() => setDetailItem(null)}>
+                  <Text style={styles.detailCloseText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Action sheet */}
       <Modal visible={!!menuItem} transparent animationType="slide" onRequestClose={() => setMenuItem(null)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setMenuItem(null)}>
-          <View style={styles.actionSheet}>
+          <View style={styles.actionSheet} onStartShouldSetResponder={() => true}>
             <View style={styles.actionSheetHandle} />
             <Text style={styles.actionSheetTitle} numberOfLines={1}>{menuItem?.name}</Text>
 
@@ -192,7 +321,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 12 },
   title: { fontSize: 28, fontWeight: '800' },
-  logoutText: { color: '#E8335A', fontSize: 14 },
   childScroll: { marginBottom: 10 },
   childChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
   chipAvatar: { width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center' },
@@ -209,6 +337,7 @@ const styles = StyleSheet.create({
   emptySubtext: { fontSize: 14, color: '#888', marginTop: 8, textAlign: 'center', paddingHorizontal: 40 },
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9f9f9', borderRadius: 14, marginBottom: 12, overflow: 'hidden' },
   cardImage: { width: 72, height: 72, resizeMode: 'cover' },
+  cardImagePlaceholder: { width: 72, height: 72, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' },
   cardBody: { flex: 1, padding: 12 },
   cardName: { fontSize: 16, fontWeight: '700' },
   cardCategory: { fontSize: 13, color: '#888', marginTop: 2, textTransform: 'capitalize' },
@@ -216,10 +345,32 @@ const styles = StyleSheet.create({
   menuBtn: { padding: 16 },
   menuBtnText: { color: '#aaa', fontSize: 16, letterSpacing: 1 },
 
-  // Action sheet
+  // Shared modal overlay
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  actionSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
   actionSheetHandle: { width: 40, height: 4, backgroundColor: '#ddd', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+
+  // Detail sheet
+  detailSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, maxHeight: '85%' },
+  detailImage: { width: '100%', height: 220, borderRadius: 14, resizeMode: 'cover', marginBottom: 16 },
+  detailName: { fontSize: 24, fontWeight: '800', color: '#111', marginBottom: 10 },
+  detailBadgeRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  detailBadge: { backgroundColor: '#f0f0f0', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 5 },
+  detailBadgeText: { fontSize: 13, fontWeight: '600', color: '#555', textTransform: 'capitalize' },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  detailLabel: { fontSize: 15, color: '#888' },
+  detailValue: { fontSize: 15, color: '#111', fontWeight: '500' },
+  refreshButton: { marginTop: 10, backgroundColor: '#f0f0f0', borderRadius: 12, padding: 12, alignItems: 'center' },
+  refreshButtonText: { color: '#555', fontWeight: '600', fontSize: 14 },
+  detailLinkButton: { marginTop: 16, backgroundColor: '#f0f7ff', borderRadius: 12, padding: 14, alignItems: 'center' },
+  detailLinkText: { color: '#1565c0', fontWeight: '700', fontSize: 15 },
+  detailActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  detailManageButton: { flex: 1, borderWidth: 1.5, borderColor: '#E8335A', borderRadius: 12, padding: 14, alignItems: 'center' },
+  detailManageText: { color: '#E8335A', fontWeight: '700', fontSize: 14 },
+  detailCloseButton: { flex: 1, backgroundColor: '#E8335A', borderRadius: 12, padding: 14, alignItems: 'center' },
+  detailCloseText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+
+  // Action sheet
+  actionSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
   actionSheetTitle: { fontSize: 16, fontWeight: '700', color: '#333', marginBottom: 16, textAlign: 'center' },
   actionSheetSection: { fontSize: 12, fontWeight: '600', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
   actionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: '#f9f9f9', borderRadius: 12, marginBottom: 8 },

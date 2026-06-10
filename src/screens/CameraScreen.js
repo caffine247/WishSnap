@@ -115,6 +115,7 @@ export default function CameraScreen({ navigation }) {
     setLoadingPrice(true);
     try {
       const all = await fetchAllPrices(searchQuery);
+      console.log('Prices fetched:', JSON.stringify(all));
       setPrices(all);
     } catch (e) {
       console.log('Price fetch error:', e.message);

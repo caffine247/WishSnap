@@ -23,6 +23,10 @@ export async function deleteWishlistItem(itemId) {
   return deleteDoc(doc(db, 'wishlists', itemId));
 }
 
+export async function updateWishlistItem(itemId, data) {
+  return updateDoc(doc(db, 'wishlists', itemId), data);
+}
+
 export async function moveWishlistItem(itemId, child) {
   return updateDoc(doc(db, 'wishlists', itemId), {
     childId: child.id,

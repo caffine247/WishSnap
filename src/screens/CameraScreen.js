@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Image, Alert,
   ActivityIndicator, ScrollView, TextInput
@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { identifyItemFromPhoto } from '../services/openai';
 import { fetchPrice } from '../services/priceService';
 import { addWishlistItem } from '../services/wishlist';
+import { getChildren } from '../services/childrenService';
 import { useAuth } from '../context/AuthContext';
 
 const RETAILERS = [
@@ -34,6 +35,15 @@ export default function CameraScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [occasion, setOccasion] = useState('Christmas');
+  const [children, setChildren] = useState([]);
+  const [selectedChild, setSelectedChild] = useState(null);
+
+  useEffect(() => {
+    getChildren(user.uid).then((data) => {
+      setChildren(data);
+      if (data.length > 0) setSelectedChild(data[0]);
+    });
+  }, []);
 
   function reset() {
     setImage(null);
@@ -116,6 +126,7 @@ export default function CameraScreen({ navigation }) {
 
   async function saveToWishlist() {
     if (!result) return;
+    if (children.length > 0 && !selectedChild) return Alert.alert('Please select a child');
     await addWishlistItem(user.uid, {
       name: result.name,
       category: result.category,
@@ -127,8 +138,12 @@ export default function CameraScreen({ navigation }) {
       retailer: priceInfo?.retailer || null,
       priceDate: priceInfo?.priceDate || null,
       productUrl: priceInfo?.productUrl || null,
+      childId: selectedChild?.id || null,
+      childName: selectedChild?.name || null,
+      childColor: selectedChild?.color || null,
     });
-    Alert.alert('Added!', `${result.name} added to your ${occasion} list.`);
+    const childLabel = selectedChild ? `${selectedChild.name}'s` : 'your';
+    Alert.alert('Added!', `${result.name} added to ${childLabel} ${occasion} list.`);
     reset();
     navigation.navigate('Wishlist');
   }
@@ -218,6 +233,28 @@ export default function CameraScreen({ navigation }) {
             <Text style={styles.noPriceText}>Price unavailable — check retailers below</Text>
           )}
 
+          {children.length > 0 && (
+            <>
+              <Text style={styles.sectionLabel}>For which child?</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {children.map((child) => (
+                    <TouchableOpacity
+                      key={child.id}
+                      style={[styles.childChip, selectedChild?.id === child.id && { backgroundColor: child.color, borderColor: child.color }]}
+                      onPress={() => setSelectedChild(child)}
+                    >
+                      <View style={[styles.chipAvatar, { backgroundColor: selectedChild?.id === child.id ? '#fff3' : child.color }]}>
+                        <Text style={styles.chipAvatarText}>{child.name[0].toUpperCase()}</Text>
+                      </View>
+                      <Text style={[styles.chipName, selectedChild?.id === child.id && { color: '#fff' }]}>{child.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </>
+          )}
+
           <Text style={styles.sectionLabel}>Add to list:</Text>
           <View style={styles.occasionRow}>
             {['Christmas', 'Birthday'].map((o) => (
@@ -301,4 +338,8 @@ const styles = StyleSheet.create({
   saveButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   retailerButton: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, marginBottom: 8 },
   retailerText: { fontSize: 15, color: '#333' },
+  childChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
+  chipAvatar: { width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center' },
+  chipAvatarText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  chipName: { fontSize: 14, fontWeight: '600', color: '#333' },
 });

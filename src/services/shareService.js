@@ -6,13 +6,15 @@ function generateToken() {
   return Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
 }
 
-export async function createShareLink(userId, occasion) {
-  const items = await getWishlistItems(userId);
+export async function createShareLink(userId, occasion, child = null) {
+  const items = await getWishlistItems(userId, child?.id || null);
   const filtered = occasion === 'All' ? items : items.filter((i) => i.occasion === occasion);
 
   const shareData = {
     userId,
     occasion,
+    childName: child?.name || null,
+    childColor: child?.color || null,
     createdAt: serverTimestamp(),
     token: generateToken(),
     items: filtered.map((i) => ({

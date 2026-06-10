@@ -72,9 +72,10 @@
       const content = document.getElementById('content');
       content.style.display = 'block';
 
-      const occasionLabel = data.occasion === 'All' ? 'Full Wish List' : `${data.occasion} Wish List`;
-      document.getElementById('subtitle').textContent = occasionLabel;
-      document.title = `WishSnap - ${occasionLabel}`;
+      const occasionLabel = data.occasion === 'All' ? 'Wish List' : `${data.occasion} Wish List`;
+      const childPrefix = data.childName ? `${data.childName}'s ` : '';
+      document.getElementById('subtitle').textContent = `${childPrefix}${occasionLabel}`;
+      document.title = `WishSnap - ${childPrefix}${occasionLabel}`;
 
       if (!data.items || data.items.length === 0) {
         content.innerHTML = '<div class="empty">No items on this list yet!</div>';
@@ -82,7 +83,7 @@
       }
 
       const occasionEmoji = data.occasion === 'Christmas' ? '🎄' : data.occasion === 'Birthday' ? '🎂' : '🎁';
-      let html = `<div class="occasion-badge">${occasionEmoji} ${occasionLabel}</div>`;
+      let html = `<div class="occasion-badge">${occasionEmoji} ${childPrefix}${occasionLabel}</div>`;
 
       data.items.forEach(item => {
         const img = item.imageUri

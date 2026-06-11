@@ -46,6 +46,11 @@
     .search-buttons { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
     .search-btn { display: block; text-align: center; padding: 10px 4px; border: 1.5px solid #eee; border-radius: 10px; font-size: 13px; font-weight: 600; color: #333; text-decoration: none; }
     .close-btn { display: block; width: 100%; margin-top: 12px; background: none; border: 1.5px solid #eee; border-radius: 14px; padding: 14px; font-size: 15px; color: #888; cursor: pointer; }
+    .purchased-btn { display: block; width: 100%; margin-top: 10px; background: #f1f8e9; border: 1.5px solid #81c784; border-radius: 14px; padding: 14px; font-size: 15px; font-weight: 700; color: #2e7d32; cursor: pointer; }
+    .purchased-btn.active { background: #e8f5e9; }
+    .purchased-badge { display: inline-block; background: #e8f5e9; color: #2e7d32; border-radius: 8px; padding: 3px 8px; font-size: 11px; font-weight: 700; margin-left: 6px; vertical-align: middle; }
+    .item-card.is-purchased .item-name { text-decoration: line-through; opacity: 0.6; }
+    .item-card.is-purchased { opacity: 0.7; }
   </style>
 </head>
 <body>
@@ -72,7 +77,7 @@
   <script src="/__/firebase/10.12.0/firebase-firestore-compat.js"></script>
   <script src="/__/firebase/init.js"></script>
   <script type="module">
-    import { getFirestore, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+    import { getFirestore, collection, query, where, getDocs, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
     import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 
     const app = getApps()[0];
@@ -91,7 +96,15 @@
       document.getElementById('overlay').classList.remove('open');
     };
 
+    let currentDetailIndex = null;
+
     window.openDetail = function(index) {
+      currentDetailIndex = index;
+      renderDetail(index);
+      document.getElementById('overlay').classList.add('open');
+    };
+
+    function renderDetail(index) {
       const item = allItems[index];
       if (!item) return;
 
@@ -115,6 +128,7 @@
         const emoji = item.occasion === 'Christmas' ? '🎄' : '🎂';
         html += `<div class="badge">${emoji} ${item.occasion}</div>`;
       }
+      if (item.purchased) html += `<div class="badge" style="background:#e8f5e9;color:#2e7d32">✓ Purchased</div>`;
       html += `</div>`;
 
       if (item.price) {
@@ -144,6 +158,9 @@
 
       html += `<a class="buy-button" href="${buyUrl}" target="_blank">Buy on ${item.retailer || 'Amazon'} →</a>`;
 
+      const purchasedLabel = item.purchased ? '✓ Marked as Purchased' : 'Mark as Purchased';
+      html += `<button class="purchased-btn${item.purchased ? ' active' : ''}" id="purchased-btn" onclick="togglePurchased(${index})">${purchasedLabel}</button>`;
+
       html += `
         <div class="search-buttons">
           <a class="search-btn" href="${amazonUrl}" target="_blank">Amazon</a>
@@ -154,7 +171,34 @@
       html += `<button class="close-btn" onclick="closeDetail()">Close</button>`;
 
       document.getElementById('detail-content').innerHTML = html;
-      document.getElementById('overlay').classList.add('open');
+    }
+
+    window.togglePurchased = async function(index) {
+      const item = allItems[index];
+      if (!item || !item.id) return;
+      const btn = document.getElementById('purchased-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+      try {
+        const next = !item.purchased;
+        await updateDoc(doc(db, 'wishlists', item.id), { purchased: next });
+        allItems[index] = { ...item, purchased: next };
+        renderDetail(index);
+        // Update card in list
+        const cards = document.querySelectorAll('.item-card');
+        if (cards[index]) {
+          cards[index].classList.toggle('is-purchased', next);
+          const badge = cards[index].querySelector('.purchased-badge');
+          if (next && !badge) {
+            const nameEl = cards[index].querySelector('.item-name');
+            if (nameEl) nameEl.insertAdjacentHTML('afterend', '<span class="purchased-badge">Purchased</span>');
+          } else if (!next && badge) {
+            badge.remove();
+          }
+        }
+      } catch (e) {
+        if (btn) { btn.disabled = false; btn.textContent = item.purchased ? '✓ Marked as Purchased' : 'Mark as Purchased'; }
+        alert('Could not update. Please try again.');
+      }
     };
 
     async function loadList() {
@@ -198,12 +242,14 @@
         const price = item.price
           ? `<div class="item-price">$${parseFloat(item.price).toFixed(2)} · ${item.retailer || ''}</div>`
           : '';
+        const purchasedBadge = item.purchased ? '<span class="purchased-badge">Purchased</span>' : '';
+        const purchasedClass = item.purchased ? ' is-purchased' : '';
 
         html += `
-          <div class="item-card" onclick="openDetail(${index})">
+          <div class="item-card${purchasedClass}" onclick="openDetail(${index})">
             ${img}
             <div class="item-body">
-              <div class="item-name">${item.name}</div>
+              <div class="item-name">${item.name}${purchasedBadge}</div>
               <div class="item-category">${item.category || ''}</div>
               ${price}
             </div>

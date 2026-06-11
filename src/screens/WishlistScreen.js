@@ -4,7 +4,7 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, Alert,
   Image, Share, ScrollView, Modal, Linking, Platform,
 } from 'react-native';
-import { getWishlistItems, deleteWishlistItem, moveWishlistItem, updateWishlistItem } from '../services/wishlist';
+import { getWishlistItems, deleteWishlistItem, moveWishlistItem, updateWishlistItem, markItemPurchased } from '../services/wishlist';
 import { fetchAllPrices } from '../services/priceService';
 import { getChildren } from '../services/childrenService';
 import { createShareLink } from '../services/shareService';
@@ -75,6 +75,14 @@ export default function WishlistScreen({ navigation }) {
     } finally {
       setSharing(false);
     }
+  }
+
+  async function handleTogglePurchased(item) {
+    const next = !item.purchased;
+    await markItemPurchased(item.id, next);
+    const updated = { ...item, purchased: next };
+    setDetailItem(updated);
+    setItems((prev) => prev.map((i) => i.id === item.id ? updated : i));
   }
 
   async function handleRefreshPrice(item) {
@@ -169,13 +177,16 @@ export default function WishlistScreen({ navigation }) {
             contentContainerStyle={{ padding: 16 }}
             renderItem={({ item }) => (
               <View style={styles.card}>
-                <TouchableOpacity style={styles.cardMain} onPress={() => setDetailItem(item)} activeOpacity={0.75}>
+                <TouchableOpacity style={[styles.cardMain, item.purchased && { opacity: 0.5 }]} onPress={() => setDetailItem(item)} activeOpacity={0.75}>
                   {item.imageUri
                     ? <Image source={{ uri: item.imageUri }} style={styles.cardImage} />
                     : <View style={styles.cardImagePlaceholder}><Text style={{ fontSize: 28 }}>🎁</Text></View>
                   }
                   <View style={styles.cardBody}>
-                    <Text style={styles.cardName}>{item.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.cardName, item.purchased && { textDecorationLine: 'line-through', color: '#aaa' }]}>{item.name}</Text>
+                      {item.purchased && <View style={styles.purchasedBadge}><Text style={styles.purchasedBadgeText}>Purchased</Text></View>}
+                    </View>
                     <Text style={styles.cardCategory}>{item.category} · {item.occasion === 'Christmas' ? '🎄' : '🎂'} {item.occasion}</Text>
                     {item.price != null ? (
                       <Text style={styles.cardPrice}>${parseFloat(item.price).toFixed(2)}{item.retailer ? ` · ${item.retailer}` : ''}</Text>
@@ -284,6 +295,15 @@ export default function WishlistScreen({ navigation }) {
                 </TouchableOpacity>
               ) : null}
 
+              <TouchableOpacity
+                style={[styles.purchasedToggle, detailItem?.purchased && styles.purchasedToggleActive]}
+                onPress={() => handleTogglePurchased(detailItem)}
+              >
+                <Text style={[styles.purchasedToggleText, detailItem?.purchased && { color: '#2e7d32' }]}>
+                  {detailItem?.purchased ? '✓  Purchased' : '🛒  Mark as purchased'}
+                </Text>
+              </TouchableOpacity>
+
               <View style={styles.detailActions}>
                 <TouchableOpacity
                   style={styles.detailManageButton}
@@ -367,6 +387,11 @@ const styles = StyleSheet.create({
   cardPrice: { fontSize: 13, color: '#2e7d32', fontWeight: '700', marginTop: 2 },
   menuBtn: { padding: 16 },
   menuBtnText: { color: '#aaa', fontSize: 16, letterSpacing: 1 },
+  purchasedBadge: { backgroundColor: '#e8f5e9', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  purchasedBadgeText: { fontSize: 10, fontWeight: '700', color: '#2e7d32' },
+  purchasedToggle: { marginTop: 16, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 12, padding: 14, alignItems: 'center' },
+  purchasedToggleActive: { backgroundColor: '#e8f5e9', borderColor: '#2e7d32' },
+  purchasedToggleText: { fontSize: 15, fontWeight: '700', color: '#555' },
   retailerRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 },
   retailerChip: { flex: 1, borderWidth: 1.5, borderRadius: 8, paddingVertical: 6, alignItems: 'center' },
   retailerChipText: { fontSize: 12, fontWeight: '700' },

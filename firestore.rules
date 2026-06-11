@@ -1,10 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Wishlists: only the owner can read/write
+    // Wishlists: owner has full access; anyone can flip the purchased flag (for shared list recipients)
     match /wishlists/{doc} {
       allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
       allow create: if request.auth != null;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['purchased']);
     }
 
     // Shares: anyone can read by token, only authenticated users can create

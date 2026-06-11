@@ -27,6 +27,10 @@ export async function updateWishlistItem(itemId, data) {
   return updateDoc(doc(db, 'wishlists', itemId), data);
 }
 
+export async function markItemPurchased(itemId, purchased) {
+  return updateDoc(doc(db, 'wishlists', itemId), { purchased });
+}
+
 export async function moveWishlistItem(itemId, child) {
   return updateDoc(doc(db, 'wishlists', itemId), {
     childId: child.id,

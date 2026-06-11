@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { identifyItemFromPhoto } from '../services/openai';
 import { fetchAllPrices } from '../services/priceService';
@@ -109,6 +110,13 @@ export default function CameraScreen({ navigation }) {
     if (!picked.canceled) {
       const uri = picked.assets[0].uri;
       setImage(uri);
+
+      // Save to camera roll silently — request permission, skip if denied
+      const { status: libStatus } = await MediaLibrary.requestPermissionsAsync();
+      if (libStatus === 'granted') {
+        await MediaLibrary.saveToLibraryAsync(uri);
+      }
+
       const base64 = await compressImageForAI(uri);
       analyzeImage(base64);
     }

@@ -10,7 +10,9 @@ import { identifyItemFromPhoto } from '../services/openai';
 import { fetchAllPrices } from '../services/priceService';
 import { addWishlistItem } from '../services/wishlist';
 import { getChildren } from '../services/childrenService';
+import { getWishlistItems } from '../services/wishlist';
 import { useAuth } from '../context/AuthContext';
+import { usePlan } from '../hooks/usePlan';
 
 const RETAILERS = [
   { name: 'Amazon', url: (q) => `https://www.amazon.com/s?k=${encodeURIComponent(q)}` },
@@ -55,6 +57,7 @@ async function cachePrices(searchQuery, prices) {
 
 export default function CameraScreen({ navigation }) {
   const { user } = useAuth();
+  const { canAddItem } = usePlan();
   const [image, setImage] = useState(null);
   const [identified, setIdentified] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -178,6 +181,14 @@ export default function CameraScreen({ navigation }) {
   async function saveToWishlist() {
     if (!result) return;
     if (children.length > 0 && !selectedChild) return Alert.alert('Please select a child');
+
+    // Check free plan item limit
+    const existingItems = await getWishlistItems(user.uid, selectedChild?.id || null);
+    if (!canAddItem(existingItems.length)) {
+      navigation.navigate('Upgrade');
+      return;
+    }
+
     const preferredRetailer = (await AsyncStorage.getItem('preferredRetailer')) || 'Amazon';
     const bestPrice = prices[preferredRetailer] || prices.Amazon || prices.Walmart || prices.Target || null;
     await addWishlistItem(user.uid, {

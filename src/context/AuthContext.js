@@ -35,6 +35,7 @@ export function AuthProvider({ children }) {
       lastName: lastName || '',
       displayName,
       email,
+      plan: 'free',
       createdAt: new Date().toISOString(),
     };
     await createProfile(cred.user.uid, profileData);

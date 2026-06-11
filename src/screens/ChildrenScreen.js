@@ -6,6 +6,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getChildren, addChild, deleteChild } from '../services/childrenService';
 import { useAuth } from '../context/AuthContext';
+import { usePlan } from '../hooks/usePlan';
 
 const COLORS = ['#E8335A', '#4A90E2', '#7B68EE', '#FF9500', '#34C759', '#FF6B6B', '#5AC8FA', '#FF2D55'];
 
@@ -33,8 +34,9 @@ function formatBirthday(birthday) {
   return new Date(birthday).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 }
 
-export default function ChildrenScreen() {
+export default function ChildrenScreen({ navigation }) {
   const { user } = useAuth();
+  const { canAddChild, FREE_LIMITS, isPremium } = usePlan();
   const [children, setChildren] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
@@ -129,7 +131,22 @@ export default function ChildrenScreen() {
         />
       )}
 
-      <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
+      {!isPremium && (
+        <TouchableOpacity style={styles.upgradeBanner} onPress={() => navigation.navigate('Upgrade')}>
+          <Text style={styles.upgradeBannerText}>⭐  Free plan: {FREE_LIMITS.children} child · {FREE_LIMITS.itemsPerChild} items — Upgrade for unlimited</Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => {
+          if (!canAddChild(children.length)) {
+            navigation.navigate('Upgrade');
+          } else {
+            setModalVisible(true);
+          }
+        }}
+      >
         <Text style={styles.addButtonText}>+ Add Child</Text>
       </TouchableOpacity>
 
@@ -221,6 +238,8 @@ const styles = StyleSheet.create({
   birthdayBadge: { backgroundColor: '#fff3e0', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   birthdayBadgeText: { fontSize: 11, fontWeight: '700', color: '#e65100' },
   deleteBtn: { color: '#ccc', fontSize: 18, padding: 8 },
+  upgradeBanner: { marginHorizontal: 24, marginBottom: 8, backgroundColor: '#fff5f7', borderRadius: 10, padding: 10 },
+  upgradeBannerText: { fontSize: 12, color: '#E8335A', fontWeight: '600', textAlign: 'center' },
   addButton: { margin: 24, backgroundColor: '#E8335A', borderRadius: 14, padding: 16, alignItems: 'center' },
   addButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 

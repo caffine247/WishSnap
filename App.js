@@ -10,6 +10,7 @@ import WishlistScreen from './src/screens/WishlistScreen';
 import DealsScreen from './src/screens/DealsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ChildrenScreen from './src/screens/ChildrenScreen';
+import UpgradeScreen from './src/screens/UpgradeScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -58,6 +59,7 @@ function AppNavigator() {
           <>
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="Deals" component={DealsScreen} options={{ headerShown: true, title: 'Find Deals' }} />
+            <Stack.Screen name="Upgrade" component={UpgradeScreen} options={{ headerShown: false, presentation: 'modal' }} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />

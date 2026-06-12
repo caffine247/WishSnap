@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updateProfile as firebaseUpdateProfile } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { getProfile, createProfile, updateProfile as saveProfile } from '../services/profileService';
+import { createFamily, joinFamily, leaveFamily } from '../services/familyService';
 
 const AuthContext = createContext(null);
 
@@ -23,6 +24,9 @@ export function AuthProvider({ children }) {
     });
     return unsub;
   }, []);
+
+  // The UID whose data pool we read/write — owner's UID for family members, own UID otherwise
+  const effectiveUserId = profile?.familyOwnerId || user?.uid;
 
   const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
 
@@ -65,8 +69,39 @@ export function AuthProvider({ children }) {
     setProfile((prev) => ({ ...prev, ...data }));
   };
 
+  const startFamily = async () => {
+    if (!user) return;
+    const { familyId, joinCode } = await createFamily(user.uid);
+    const updates = { plan: 'family', familyId, familyRole: 'owner', joinCode };
+    await saveProfile(user.uid, updates);
+    setProfile((prev) => ({ ...prev, ...updates }));
+    return joinCode;
+  };
+
+  const joinFamilyByCode = async (code) => {
+    if (!user) return;
+    const { familyId, familyOwnerId } = await joinFamily(code, user.uid);
+    const updates = { plan: 'family', familyId, familyRole: 'member', familyOwnerId };
+    await saveProfile(user.uid, updates);
+    setProfile((prev) => ({ ...prev, ...updates }));
+  };
+
+  const leaveCurrentFamily = async () => {
+    if (!user || !profile?.familyId) return;
+    await leaveFamily(profile.familyId, user.uid);
+    const updates = { plan: 'free', familyId: null, familyRole: null, familyOwnerId: null, joinCode: null };
+    await saveProfile(user.uid, updates);
+    setProfile((prev) => ({ ...prev, ...updates }));
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, register, logout, refreshProfile, saveUserProfile }}>
+    <AuthContext.Provider value={{
+      user, profile, loading,
+      effectiveUserId,
+      login, register, logout,
+      refreshProfile, saveUserProfile,
+      startFamily, joinFamilyByCode, leaveCurrentFamily,
+    }}>
       {children}
     </AuthContext.Provider>
   );

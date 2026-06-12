@@ -1,14 +1,49 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Wishlists: owner has full access; anyone can flip the purchased flag (for shared list recipients)
+
+    // Helper: requesting user is a family member whose data owner is ownerUid
+    function isFamilyMember(ownerUid) {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyOwnerId == ownerUid;
+    }
+
+    function isOwnerOrFamily(ownerUid) {
+      return request.auth != null && (request.auth.uid == ownerUid || isFamilyMember(ownerUid));
+    }
+
+    // User profiles — own profile only
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Children sub-collection — owner or family member
+    match /users/{userId}/children/{childId} {
+      allow read, write: if isOwnerOrFamily(userId);
+    }
+
+    // Wishlists — owner or family member; anyone can flip purchased flag
     match /wishlists/{doc} {
-      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow read, write: if request.auth != null && isOwnerOrFamily(resource.data.userId);
       allow create: if request.auth != null;
       allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['purchased']);
     }
 
-    // Shares: anyone can read by token, only authenticated users can create
+    // Custom lists — owner or family member
+    match /lists/{doc} {
+      allow read, write: if request.auth != null && isOwnerOrFamily(resource.data.userId);
+      allow create: if request.auth != null;
+    }
+
+    // Families — members can read and update; any authed user can create
+    match /families/{familyId} {
+      allow read: if request.auth != null && resource.data.members.hasAny([request.auth.uid]);
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && resource.data.members.hasAny([request.auth.uid]);
+    }
+
+    // Shares — public read, auth required to create
     match /shares/{doc} {
       allow read: if true;
       allow create: if request.auth != null;

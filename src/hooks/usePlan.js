@@ -7,17 +7,26 @@ export const FREE_LIMITS = {
 
 export function usePlan() {
   const { profile } = useAuth();
-  const isPremium = profile?.plan === 'premium';
+  const plan = profile?.plan || 'free';
+  const isPremium = plan === 'premium';
+  const isFamily = plan === 'family';
+  const isPaid = isPremium || isFamily;
 
   function canAddChild(currentCount) {
-    if (isPremium) return true;
-    return currentCount < FREE_LIMITS.children;
+    return isPaid || currentCount < FREE_LIMITS.children;
   }
 
   function canAddItem(currentCount) {
-    if (isPremium) return true;
-    return currentCount < FREE_LIMITS.itemsPerChild;
+    return isPaid || currentCount < FREE_LIMITS.itemsPerChild;
   }
 
-  return { isPremium, canAddChild, canAddItem, FREE_LIMITS };
+  function canUseCustomLists() {
+    return isPaid;
+  }
+
+  function canInviteFamily() {
+    return isFamily;
+  }
+
+  return { plan, isPremium, isFamily, isPaid, canAddChild, canAddItem, canUseCustomLists, canInviteFamily, FREE_LIMITS };
 }

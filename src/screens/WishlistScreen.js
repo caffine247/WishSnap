@@ -2,13 +2,15 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, Alert,
-  Image, Share, ScrollView, Modal, Linking, Platform,
+  Image, Share, ScrollView, Modal, Linking, TextInput,
 } from 'react-native';
 import { getWishlistItems, deleteWishlistItem, moveWishlistItem, updateWishlistItem, markItemPurchased } from '../services/wishlist';
 import { fetchAllPrices } from '../services/priceService';
 import { getChildren } from '../services/childrenService';
+import { getLists, createList, deleteList } from '../services/listsService';
 import { createShareLink } from '../services/shareService';
 import { useAuth } from '../context/AuthContext';
+import { usePlan } from '../hooks/usePlan';
 
 const RETAILERS = [
   { name: 'Amazon', color: '#FF9900', searchUrl: (q) => `https://www.amazon.com/s?k=${encodeURIComponent(q)}` },
@@ -17,28 +19,72 @@ const RETAILERS = [
 ];
 
 export default function WishlistScreen({ navigation }) {
-  const { user } = useAuth();
+  const { user, effectiveUserId } = useAuth();
+  const { isPaid, canUseCustomLists } = usePlan();
   const [items, setItems] = useState([]);
   const [children, setChildren] = useState([]);
+  const [lists, setLists] = useState([]);
   const [selectedChild, setSelectedChild] = useState(null);
+  const [selectedListId, setSelectedListId] = useState(null); // null = All
   const [filter, setFilter] = useState('All');
   const [sharing, setSharing] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
   const [menuItem, setMenuItem] = useState(null);
   const [refreshingPrice, setRefreshingPrice] = useState(false);
+  const [newListModal, setNewListModal] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [newListForChild, setNewListForChild] = useState(false);
+  const [savingList, setSavingList] = useState(false);
 
-  useFocusEffect(useCallback(() => { loadChildren(); }, []));
-  useEffect(() => { loadItems(); }, [selectedChild]);
+  useFocusEffect(useCallback(() => { loadAll(); }, []));
+  useEffect(() => { loadItems(); }, [selectedChild, selectedListId]);
 
-  async function loadChildren() {
-    const data = await getChildren(user.uid);
-    setChildren(data);
-    setSelectedChild(data.length > 0 ? data[0] : null);
+  async function loadAll() {
+    const [childData, listData] = await Promise.all([
+      getChildren(effectiveUserId),
+      getLists(effectiveUserId),
+    ]);
+    setChildren(childData);
+    setSelectedChild((prev) => prev ? childData.find((c) => c.id === prev.id) || (childData[0] || null) : (childData[0] || null));
+    setLists(listData);
   }
 
   async function loadItems() {
-    const data = await getWishlistItems(user.uid, selectedChild?.id || null);
+    const data = await getWishlistItems(effectiveUserId, selectedChild?.id || null);
     setItems(data);
+  }
+
+  async function handleCreateList() {
+    if (!newListName.trim()) return;
+    setSavingList(true);
+    try {
+      await createList(effectiveUserId, {
+        name: newListName.trim(),
+        childId: newListForChild ? selectedChild?.id || null : null,
+        childName: newListForChild ? selectedChild?.name || null : null,
+      });
+      setNewListName('');
+      setNewListForChild(false);
+      setNewListModal(false);
+      const updated = await getLists(effectiveUserId);
+      setLists(updated);
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingList(false);
+    }
+  }
+
+  async function handleDeleteList(list) {
+    Alert.alert('Delete list?', `Remove "${list.name}"? Items in this list won't be deleted.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await deleteList(list.id);
+        if (selectedListId === list.id) setSelectedListId(null);
+        const updated = await getLists(effectiveUserId);
+        setLists(updated);
+      }},
+    ]);
   }
 
   async function handleDelete(item) {
@@ -66,7 +112,7 @@ export default function WishlistScreen({ navigation }) {
   async function handleShare() {
     setSharing(true);
     try {
-      const url = await createShareLink(user.uid, filter, selectedChild);
+      const url = await createShareLink(effectiveUserId, filter, selectedChild);
       const childLabel = selectedChild ? `${selectedChild.name}'s` : 'Our';
       const occasionLabel = filter === 'All' ? 'Wish List' : `${filter} Wish List`;
       await Share.share({ message: `Check out ${childLabel} ${occasionLabel}! 🎁\n${url}`, url });
@@ -112,7 +158,11 @@ export default function WishlistScreen({ navigation }) {
     }
   }
 
-  const filtered = filter === 'All' ? items : items.filter((i) => i.occasion === filter);
+  // Lists relevant to the current view: freestanding + child-specific lists for selected child
+  const visibleLists = lists.filter((l) => !l.childId || l.childId === selectedChild?.id);
+  const filtered = items
+    .filter((i) => filter === 'All' || i.occasion === filter)
+    .filter((i) => !selectedListId || i.listId === selectedListId);
   const otherChildren = children.filter((c) => c.id !== selectedChild?.id);
 
   return (
@@ -151,6 +201,38 @@ export default function WishlistScreen({ navigation }) {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Custom lists row */}
+      {(visibleLists.length > 0 || canUseCustomLists()) && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.listsScroll} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 8 }}>
+          <TouchableOpacity
+            style={[styles.listChip, !selectedListId && styles.listChipActive]}
+            onPress={() => setSelectedListId(null)}
+          >
+            <Text style={[styles.listChipText, !selectedListId && { color: '#fff' }]}>All</Text>
+          </TouchableOpacity>
+          {visibleLists.map((list) => (
+            <TouchableOpacity
+              key={list.id}
+              style={[styles.listChip, selectedListId === list.id && styles.listChipActive]}
+              onPress={() => setSelectedListId(list.id)}
+              onLongPress={() => handleDeleteList(list)}
+            >
+              <Text style={[styles.listChipText, selectedListId === list.id && { color: '#fff' }]}>{list.name}</Text>
+            </TouchableOpacity>
+          ))}
+          {canUseCustomLists() && (
+            <TouchableOpacity style={styles.newListChip} onPress={() => { setNewListForChild(!!selectedChild); setNewListModal(true); }}>
+              <Text style={styles.newListChipText}>+ New List</Text>
+            </TouchableOpacity>
+          )}
+          {!canUseCustomLists() && (
+            <TouchableOpacity style={styles.newListChip} onPress={() => navigation.navigate('Upgrade')}>
+              <Text style={styles.newListChipText}>+ Lists (Premium)</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+      )}
 
       {filtered.length === 0 ? (
         <View style={styles.empty}>
@@ -320,6 +402,42 @@ export default function WishlistScreen({ navigation }) {
         </TouchableOpacity>
       </Modal>
 
+      {/* New list modal */}
+      <Modal visible={newListModal} transparent animationType="slide" onRequestClose={() => setNewListModal(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setNewListModal(false)}>
+          <View style={styles.actionSheet} onStartShouldSetResponder={() => true}>
+            <View style={styles.actionSheetHandle} />
+            <Text style={styles.actionSheetTitle}>Create a New List</Text>
+            <TextInput
+              style={styles.listNameInput}
+              value={newListName}
+              onChangeText={setNewListName}
+              placeholder="List name (e.g. Christmas 2025)"
+              autoFocus
+              autoCapitalize="words"
+            />
+            {selectedChild && (
+              <TouchableOpacity style={styles.listChildToggle} onPress={() => setNewListForChild((v) => !v)}>
+                <View style={[styles.checkbox, newListForChild && styles.checkboxActive]}>
+                  {newListForChild && <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text>}
+                </View>
+                <Text style={styles.listChildToggleText}>Link to {selectedChild.name}'s profile</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.saveListButton, (!newListName.trim() || savingList) && { opacity: 0.5 }]}
+              onPress={handleCreateList}
+              disabled={!newListName.trim() || savingList}
+            >
+              <Text style={styles.saveListButtonText}>{savingList ? 'Creating...' : 'Create List'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionCancel} onPress={() => setNewListModal(false)}>
+              <Text style={styles.actionCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Action sheet */}
       <Modal visible={!!menuItem} transparent animationType="slide" onRequestClose={() => setMenuItem(null)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setMenuItem(null)}>
@@ -392,6 +510,19 @@ const styles = StyleSheet.create({
   purchasedToggle: { marginTop: 16, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 12, padding: 14, alignItems: 'center' },
   purchasedToggleActive: { backgroundColor: '#e8f5e9', borderColor: '#2e7d32' },
   purchasedToggleText: { fontSize: 15, fontWeight: '700', color: '#555' },
+  listsScroll: { marginBottom: 8 },
+  listChip: { borderWidth: 1.5, borderColor: '#9c27b0', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 14 },
+  listChipActive: { backgroundColor: '#9c27b0' },
+  listChipText: { fontSize: 13, fontWeight: '600', color: '#9c27b0' },
+  newListChip: { borderWidth: 1.5, borderColor: '#9c27b0', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 14, borderStyle: 'dashed' },
+  newListChipText: { fontSize: 13, fontWeight: '600', color: '#9c27b0' },
+  listNameInput: { borderWidth: 1.5, borderColor: '#eee', borderRadius: 12, padding: 14, fontSize: 16, marginBottom: 16, backgroundColor: '#fafafa' },
+  listChildToggle: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#9c27b0', justifyContent: 'center', alignItems: 'center' },
+  checkboxActive: { backgroundColor: '#9c27b0' },
+  listChildToggleText: { fontSize: 15, color: '#333' },
+  saveListButton: { backgroundColor: '#9c27b0', borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 8 },
+  saveListButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   retailerRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 },
   retailerChip: { flex: 1, borderWidth: 1.5, borderRadius: 8, paddingVertical: 6, alignItems: 'center' },
   retailerChipText: { fontSize: 12, fontWeight: '700' },

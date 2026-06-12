@@ -9,9 +9,9 @@ import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { identifyItemFromPhoto } from '../services/openai';
 import { fetchAllPrices } from '../services/priceService';
-import { addWishlistItem } from '../services/wishlist';
+import { addWishlistItem, getWishlistItems } from '../services/wishlist';
 import { getChildren } from '../services/childrenService';
-import { getWishlistItems } from '../services/wishlist';
+import { getLists } from '../services/listsService';
 import { useAuth } from '../context/AuthContext';
 import { usePlan } from '../hooks/usePlan';
 
@@ -57,7 +57,7 @@ async function cachePrices(searchQuery, prices) {
 }
 
 export default function CameraScreen({ navigation }) {
-  const { user } = useAuth();
+  const { user, effectiveUserId } = useAuth();
   const { canAddItem } = usePlan();
   const [image, setImage] = useState(null);
   const [identified, setIdentified] = useState(null);
@@ -72,12 +72,15 @@ export default function CameraScreen({ navigation }) {
   const [occasion, setOccasion] = useState('Christmas');
   const [children, setChildren] = useState([]);
   const [selectedChild, setSelectedChild] = useState(null);
+  const [lists, setLists] = useState([]);
+  const [selectedListId, setSelectedListId] = useState(null);
 
   useEffect(() => {
-    getChildren(user.uid).then((data) => {
+    getChildren(effectiveUserId).then((data) => {
       setChildren(data);
       if (data.length > 0) setSelectedChild(data[0]);
     });
+    getLists(effectiveUserId).then(setLists);
   }, []);
 
   function reset() {
@@ -191,7 +194,7 @@ export default function CameraScreen({ navigation }) {
     if (children.length > 0 && !selectedChild) return Alert.alert('Please select a child');
 
     // Check free plan item limit
-    const existingItems = await getWishlistItems(user.uid, selectedChild?.id || null);
+    const existingItems = await getWishlistItems(effectiveUserId, selectedChild?.id || null);
     if (!canAddItem(existingItems.length)) {
       navigation.navigate('Upgrade');
       return;
@@ -199,7 +202,8 @@ export default function CameraScreen({ navigation }) {
 
     const preferredRetailer = (await AsyncStorage.getItem('preferredRetailer')) || 'Amazon';
     const bestPrice = prices[preferredRetailer] || prices.Amazon || prices.Walmart || prices.Target || null;
-    await addWishlistItem(user.uid, {
+    const selectedList = lists.find((l) => l.id === selectedListId) || null;
+    await addWishlistItem(effectiveUserId, {
       name: result.name,
       category: result.category,
       searchQuery: result.searchQuery,
@@ -213,6 +217,8 @@ export default function CameraScreen({ navigation }) {
       childId: selectedChild?.id || null,
       childName: selectedChild?.name || null,
       childColor: selectedChild?.color || null,
+      listId: selectedList?.id || null,
+      listName: selectedList?.name || null,
     });
     const childLabel = selectedChild ? `${selectedChild.name}'s` : 'your';
     Alert.alert('Added!', `${result.name} added to ${childLabel} ${occasion} list.`);
@@ -324,6 +330,31 @@ export default function CameraScreen({ navigation }) {
             ))}
           </View>
 
+          {lists.length > 0 && (
+            <>
+              <Text style={styles.sectionLabel}>Custom list (optional):</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    style={[styles.listChip, !selectedListId && styles.listChipActive]}
+                    onPress={() => setSelectedListId(null)}
+                  >
+                    <Text style={[styles.listChipText, !selectedListId && { color: '#fff' }]}>None</Text>
+                  </TouchableOpacity>
+                  {lists.map((l) => (
+                    <TouchableOpacity
+                      key={l.id}
+                      style={[styles.listChip, selectedListId === l.id && styles.listChipActive]}
+                      onPress={() => setSelectedListId(l.id)}
+                    >
+                      <Text style={[styles.listChipText, selectedListId === l.id && { color: '#fff' }]}>{l.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </>
+          )}
+
           <TouchableOpacity style={styles.saveButton} onPress={saveToWishlist}>
             <Text style={styles.saveButtonText}>Add to Wishlist</Text>
           </TouchableOpacity>
@@ -410,6 +441,9 @@ const styles = StyleSheet.create({
   retailerText: { fontSize: 15, color: '#333', fontWeight: '600' },
   retailerPrice: { fontSize: 16, fontWeight: '800', color: '#2e7d32' },
   retailerNoPrice: { fontSize: 13, color: '#aaa' },
+  listChip: { borderWidth: 1.5, borderColor: '#9c27b0', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 14 },
+  listChipActive: { backgroundColor: '#9c27b0' },
+  listChipText: { fontSize: 13, fontWeight: '600', color: '#9c27b0' },
   childChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 12 },
   chipAvatar: { width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center' },
   chipAvatarText: { color: '#fff', fontSize: 11, fontWeight: '800' },

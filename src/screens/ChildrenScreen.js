@@ -35,8 +35,8 @@ function formatBirthday(birthday) {
 }
 
 export default function ChildrenScreen({ navigation }) {
-  const { user } = useAuth();
-  const { canAddChild, FREE_LIMITS, isPremium } = usePlan();
+  const { user, effectiveUserId } = useAuth();
+  const { canAddChild, FREE_LIMITS, isPaid } = usePlan();
   const [children, setChildren] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
@@ -47,13 +47,13 @@ export default function ChildrenScreen({ navigation }) {
   useEffect(() => { loadChildren(); }, []);
 
   async function loadChildren() {
-    const data = await getChildren(user.uid);
+    const data = await getChildren(effectiveUserId);
     setChildren(data);
   }
 
   async function handleAdd() {
     if (!name.trim()) return Alert.alert('Please enter a name');
-    await addChild(user.uid, {
+    await addChild(effectiveUserId, {
       name: name.trim(),
       color: selectedColor,
       birthday: birthday ? birthday.toISOString() : null,
@@ -69,7 +69,7 @@ export default function ChildrenScreen({ navigation }) {
   async function handleDelete(child) {
     Alert.alert(`Remove ${child.name}?`, "Their wishlist items will remain but won't be linked to this profile.", [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => { await deleteChild(user.uid, child.id); loadChildren(); } },
+      { text: 'Remove', style: 'destructive', onPress: async () => { await deleteChild(effectiveUserId, child.id); loadChildren(); } },
     ]);
   }
 
@@ -131,7 +131,7 @@ export default function ChildrenScreen({ navigation }) {
         />
       )}
 
-      {!isPremium && (
+      {!isPaid && (
         <TouchableOpacity style={styles.upgradeBanner} onPress={() => navigation.navigate('Upgrade')}>
           <Text style={styles.upgradeBannerText}>⭐  Free plan: {FREE_LIMITS.children} child · {FREE_LIMITS.itemsPerChild} items — Upgrade for unlimited</Text>
         </TouchableOpacity>
